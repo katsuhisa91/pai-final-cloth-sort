@@ -1,0 +1,24 @@
+{"event": "read", "pick_xy": [364.0, 96.0], "read": "3", "conf": 0.874, "truth": "3"}
+{"event": "read", "pick_xy": [132.0, 104.0], "read": "5", "conf": 0.897, "truth": "5"}
+{"event": "read", "pick_xy": [392.0, 188.0], "read": "19", "conf": 0.381, "truth": "19"}
+{"event": "read", "pick_xy": [184.0, 276.0], "read": "9", "conf": 0.691, "truth": "9"}
+{"event": "read", "pick_xy": [328.0, 270.0], "read": "16", "conf": 0.875, "truth": "16"}
+{"event": "read", "pick_xy": [402.0, 262.0], "read": "13", "conf": 0.313, "truth": "15"}
+{"event": "read", "pick_xy": [490.0, 334.0], "read": "7", "conf": 0.984, "truth": "7"}
+{"event": "read", "pick_xy": [246.0, 398.0], "read": "4", "conf": 0.482, "truth": "14"}
+{"event": "read", "pick_xy": [392.0, 388.0], "read": "8", "conf": 0.731, "truth": "8"}
+{"event": "read", "pick_xy": [210.0, 498.0], "read": "13", "conf": 0.875, "truth": "13"}
+{"event": "read", "pick_xy": [412.0, 492.0], "read": "4", "conf": 0.826, "truth": "4"}
+{"event": "read", "pick_xy": [302.0, 502.0], "read": "11", "conf": 0.895, "truth": "11"}
+{"event": "place", "label": "4", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "4", "reread": "4", "reread_conf": 0.872}
+{"event": "place", "label": "7", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "7", "reread": "7", "reread_conf": 0.979}
+{"event": "place", "label": "13", "dest": "review", "reason": "確信度が低い(0.31)", "phase": "done", "verified": true, "truth": "15", "reread": "13", "reread_conf": 0.313}
+{"event": "place", "label": "8", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "8", "reread": "8", "reread_conf": 0.76}
+{"event": "place", "label": "19", "dest": "review", "reason": "確信度が低い(0.38)", "phase": "done", "verified": true, "truth": "19", "reread": "19", "reread_conf": 0.454}
+{"event": "place", "label": "11", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "11", "reread": "11", "reread_conf": 0.895}
+{"event": "place", "label": "16", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "16", "reread": "16", "reread_conf": 0.912}
+{"event": "place", "label": "4", "dest": "review", "reason": "確信度が低い(0.48)", "phase": "done", "verified": true, "truth": "14", "reread": "154", "reread_conf": 0.304}
+{"event": "place", "label": "13", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "13", "reread": "13", "reread_conf": 0.872}
+{"event": "place", "label": "3", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "3", "reread": "3", "reread_conf": 0.422}
+{"event": "place", "label": "9", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "9", "reread": "9", "reread_conf": 0.668}
+{"event": "place", "label": "5", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "verified": true, "truth": "5", "reread": "5", "reread_conf": 0.897}

@@ -1,0 +1,39 @@
+# dora-rs の配線。ロボット側(sim)と AI 側(brain)を別プロセスに分け、記録(recorder)を横から挿す。
+#   dora run dataflow.yml
+nodes:
+  - id: sim
+    path: cloth_sort/nodes/sim_node.py
+    env:
+      SEED: "1"
+      N_PIECES: "12"
+      DT: "0.05"
+      FRAME_DIR: "runs/dora/frames"
+    inputs:
+      tick:
+        source: dora/timer/millis/50
+        queue_size: 1000
+      capture_request: brain/capture_request
+      task: brain/task
+      finish: brain/finish
+    outputs: [image, background, result]
+
+  - id: brain
+    path: cloth_sort/nodes/brain_node.py
+    env:
+      MIN_CONFIDENCE: "0.6"
+    inputs:
+      tick:
+        source: dora/timer/millis/500
+        queue_size: 10
+      background: sim/background
+      image: sim/image
+      result: sim/result
+    outputs: [capture_request, task, finish, reading, record]
+
+  - id: recorder
+    path: cloth_sort/nodes/recorder_node.py
+    env:
+      RECORD_PATH: "runs/dora/log.jsonl"
+    inputs:
+      reading: brain/reading
+      record: brain/record

@@ -1,0 +1,8 @@
+torch>=2.4
+numpy>=2.0
+pillow>=10
+pyarrow>=17
+dora-rs==1.0.1
+dora-rs-cli==1.0.1
+pyyaml>=6
+pytest>=8

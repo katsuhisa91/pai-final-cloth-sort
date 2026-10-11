@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>PAI最終課題 説明資料 — 番号付き布片の仕分け</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; font-size: 10.5pt; line-height: 1.6; color: #222; }
+  h1 { font-size: 18pt; margin: 0 0 4px; }
+  h2 { font-size: 13pt; margin: 18px 0 6px; border-bottom: 1px solid #999; padding-bottom: 2px; }
+  h3 { font-size: 11pt; margin: 12px 0 4px; }
+  .sub { color: #555; margin-bottom: 14px; }
+  table { border-collapse: collapse; margin: 6px 0 10px; font-size: 9.5pt; }
+  th, td { border: 1px solid #bbb; padding: 3px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  figure { margin: 8px 0 12px; }
+  figure img { width: 100%; border: 1px solid #ccc; }
+  figcaption { font-size: 9pt; color: #555; }
+  code { font-family: Menlo, monospace; font-size: 9pt; background: #f4f4f4; padding: 0 3px; }
+  pre { font-family: Menlo, monospace; font-size: 8.5pt; background: #f4f4f4; padding: 8px; }
+  ul { margin: 4px 0 8px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  .pb { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>番号付き布片を番号どおりの置き場へ運ぶ</h1>
+<div class="sub">Physical AI 応用編1 最終課題 説明資料 — 手書き番号の読み取り × dora-rs dataflow × 仮想アーム</div>
+
+<h2>1. 課題の概要と目的</h2>
+<p>
+本課題はこの状況を抽象化し、<b>「作業台に並んだ番号付きの布片を、ロボットが番号を読み取って、番号どおりの置き場へ運ぶ」</b>タスクを設計・実装しました。
+</p>
+<p>
+狙いは、講座で学んだ MLOps / RobOps・ロボットミドルウェア・OSS の考え方を 1 本のパイプラインとして通すことです。
+AI の精度そのものより、<b>読み間違えても止まらず、人が後で確認できる運用</b>を設計しました。
+アームは今回は仮想実装で、実機の接続は次の段階に残しています。
+</p>
+
+<h2>2. システム構成</h2>
+<pre>
+[段取り] 何も置いていない机を撮影(背景差分の基準)
+   ↓
+カメラ(俯瞰) → 布片検出(背景差分) → 番号読み取り(インク抽出 → 文字分割 → 1 文字 CNN)
+   ↓                                                   読めない / 確信度が低い → 要確認トレイ
+計画(番号 → 置き場、近い順に並べる)
+   ↓
+仮想アーム pick &amp; place(状態機械: 接近 → 降下 → 把持 → 持ち上げ → 搬送 → 降下 → 放す → 退避)
+   ↓
+置いた直後に撮り直して番号を照合(自己検証) → JSONL に記録
+</pre>
+<table>
+<tr><th>要素</th><th>実装</th><th>講座との対応</th></tr>
+<tr><td>AI(推論)</td><td>自前学習した 1 文字 CNN(約 47 万パラメータ、CPU 推論 0.1 秒 / 12 枚)</td><td>必須要件「何らかの形で AI を使用」</td></tr>
+<tr><td>検出</td><td>段取り時の背景画像との差分 + 連結成分(深層学習なし)</td><td>使い分け: 学習が要らない部分には使わない</td></tr>
+<tr><td>計画・運用</td><td>確信度しきい値で要確認トレイへ逃がす、置いた後にカメラで照合、JSONL 記録</td><td>RobOps: 止めない・記録する・あとで直す</td></tr>
+<tr><td>ロボット</td><td><code>RobotArm</code> インターフェース + 2D 運動学の <code>VirtualArm</code>(速度制限つき)</td><td>実機化はこの 1 クラスの差し替え</td></tr>
+</table>
+
+<h2>3. 工夫した点</h2>
+<ul>
+<li><b>語彙を文字単位にした</b>: 番号を 30 クラス分類にすると未知の番号が読めない。0〜9 と「-」の 11 クラスにし、連結成分で文字に分けてから読むことで「1-2」のような番号も扱える。</li>
+<li><b>世界と学習データが同じ描画器を使う</b>: シミュレータが布片に番号を描くコードと、学習データを合成するコードを共通化した(<code>sim/synth.py</code>)。学習と運用の前処理がずれない。</li>
+<li><b>読めないときの逃げ道</b>: 確信度がしきい値(0.6)未満、置き場に無い番号、重複は要確認トレイへ。誤った置き場に置くより、人が後で確認するほうが安い。</li>
+<li><b>自己検証</b>: 置いた直後に撮り直して番号を読み、計画どおりかをログに残す。これが再学習データの種になる。</li>
+<li><b>単一プロセス実行と分散実行の二本立て</b>: 同じ部品を <code>pipeline.py</code>(決定的・テスト用)と dora ノード(分散)から呼ぶ。テストは 14 件を pytest で自動化した。</li>
+</ul>
+
+<h2>4. 結果</h2>
+<h3>4.1 番号読み取りモデル</h3>
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>学習データ</td><td>8,800 枚(11 クラス × 800、合成 9.7 秒)</td></tr>
+<tr><td>学習時間</td><td>255 秒(CPU、20 エポック)</td></tr>
+<tr><td>学習フォントでの精度(検証)</td><td>100.0%</td></tr>
+<tr><td>未見フォント 3 種での精度</td><td>84.6%(文字単位)。「6」58%・「3」60%・「2」71% が弱く、「0」「5」「-」はほぼ 100%</td></tr>
+</table>
+<p>未見の筆跡では 2 桁の番号で 7 割程度しか正しく読めない計算になります。だからこそ、下流の「確信度で逃がす」「置いた後に照合する」が効きます。</p>
+
+<h3>4.2 仕分けタスク(布片 12 枚、seed=1)</h3>
+<table>
+<tr><th>項目</th><th>単一プロセス</th><th>dora 分散実行</th></tr>
+<tr><td>検出</td><td>12 / 12</td><td>12 / 12</td></tr>
+<tr><td>番号を正しく読めた</td><td>10 / 12</td><td>10 / 12</td></tr>
+<tr><td>置き場へ配置(検証 OK)</td><td>9(9)</td><td>9</td></tr>
+<tr><td>要確認トレイへ</td><td>3(読み違い 2、正しいが低確信度 1)</td><td>3</td></tr>
+<tr><td>誤った置き場に置いた</td><td><b>0</b></td><td><b>0</b></td></tr>
+<tr><td>所要(シミュレーション時間)</td><td>64 秒</td><td>約 65 秒</td></tr>
+</table>
+<p>読み違えた 2 枚(「15」→「13」、「14」→「4」)はいずれも確信度 0.31 / 0.48 でしきい値を下回り、要確認トレイへ回りました。誤配置ゼロは AI の精度ではなく運用設計で達成しています。</p>
+
+<figure><img src="fig1_detect.png"><figcaption>図1: 撮影直後。検出枠に読み取った番号と確信度を重ねている。橙色がしきい値未満。</figcaption></figure>
+<figure><img src="fig2_carry.png"><figcaption>図2: 搬送中。右のパネルに工程・判断理由・ログを表示し、動画だけで判断の流れが追えるようにした。</figcaption></figure>
+<figure><img src="fig3_done.png"><figcaption>図3: 完了。番号どおりの置き場に 9 枚、要確認トレイに 3 枚。</figcaption></figure>
+
+<h2>5. 動画について</h2>
+<p>長さ約 70 秒、実時間(倍速なし)。左が作業台の俯瞰、右が状態パネル。撮影・読み取り → 計画 → 1 枚ずつの搬送 → 完了の順で、各工程の判断理由を字幕に出しています。</p>
+
+<h2>6. 実機への道筋と限界</h2>
+<ul>
+<li><b>アーム</b>: <code>RobotArm</code>(move_to / grip / release)を SO-101 や OpenArm 向けに実装すれば上位はそのまま。LeRobot のドライバを使う想定。</li>
+<li><b>カメラ</b>: 画素 → 作業台座標のキャリブレーションが必要。本実装は 1 px = 1 mm の俯瞰を仮定。</li>
+<li><b>積み重なった布片</b>: 本課題では重ならずに並んだ状態から始めた。山から 1 枚ずつ分離する把持は別課題(吸着ハンド等)。</li>
+</ul>
+
+<h2>7. 反省</h2>
+<ul>
+<li>最初のモデル(Global Average Pooling のみ)は未見フォントで 57% だった。全結合層を足して 85% に上がった。小さな問題でもモデルの容量は測ってから決めるべきだった。</li>
+<li>dora のノード間で numpy の int64 がそのまま JSON に入って落ちた。メッセージ境界では型を明示的に落とす補助関数を最初から置くべきだった。</li>
+<li>ベージュの布片が木目の机に溶けて検出漏れした。中央値色との距離ではなく、段取り時の背景画像との差分に切り替えて解決した。実機でも「空の作業台を撮る」段取りを手順に入れる。</li>
+</ul>
+
+<h2>8. 再現手順</h2>
+<pre>
+uv venv .venv --python 3.12 &amp;&amp; uv pip install --python .venv/bin/python -r requirements.txt
+export PYTHONPATH=$PWD
+.venv/bin/python -m cloth_sort.ml.train --out models            # 学習(約 5 分)
+.venv/bin/python -m cloth_sort.pipeline --seed 1 --n 12 --out runs/seed1 --video
+./run_dora.sh                                                   # dora 分散実行
+.venv/bin/python -m pytest -q                                   # テスト 14 件
+</pre>
+<p>使用 OSS: dora-rs(Apache-2.0)、PyTorch(BSD-3)、NumPy、Pillow、Apache Arrow、ffmpeg。コードは GitHub で公開(リポジトリ URL は Omnicampus の提出欄に記載)。</p>
+
+</body>
+</html>
