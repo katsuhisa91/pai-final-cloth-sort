@@ -7,6 +7,7 @@ dora-rs の dataflow としてつなぎ、仮想アームで動かしていま�
 - 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(約 2 分、1920x1080。説明スライド + dora 版の実行 67 秒、等速)
 - 実行部分のみ: `runs/seed1/cloth_sort.mp4`(単一プロセス版、約 70 秒)、`runs/dora/cloth_sort_dora.mp4`(dora 版)
 - 報告書: `report/report.pdf`(元は `report/report.html`)
+- 提出の流れ(public 化、YouTube、omnicampus): `SUBMISSION.md`
 - 実機は未接続。アームは `RobotArm` インターフェースの仮想実装(`VirtualArm`)で、実機対応はこの 1 クラスを足す形
 
 ## 動かし方
