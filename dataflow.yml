@@ -1,4 +1,4 @@
-# dora-rs の配線。ロボット側(sim)と AI 側(brain)を別プロセスに分け、記録(recorder)を横から挿す。
+# dora-rs のノード構成。ロボット側(sim)と AI 側(brain)を別プロセスに分け、記録(recorder)を横から挿す。
 #   dora run dataflow.yml
 nodes:
   - id: sim

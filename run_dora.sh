@@ -1,7 +1,7 @@
 #!/bin/bash
 # dora-rs で分散実行する。フレームは runs/dora/frames、ログは runs/dora/log.jsonl に出る。
 #   ./run_dora.sh            … 実行
-#   ./run_dora.sh graph      … 配線図(mermaid)
+#   ./run_dora.sh graph      … 構成図(mermaid)
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"

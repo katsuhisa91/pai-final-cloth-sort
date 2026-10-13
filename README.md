@@ -2,9 +2,10 @@
 
 手書きの番号が書かれた 5 cm 角の布片を、番号どおりの置き場へ運ぶロボットのパイプラインです。
 「撮影 → 布片の検出 → 番号の読み取り(自前学習した CNN) → 計画 → pick & place → カメラで検証」を
-dora-rs の dataflow として配線し、仮想アームで動かしています。
+dora-rs の dataflow としてつなぎ、仮想アームで動かしています。
 
-- 動画: `runs/seed1/cloth_sort.mp4`(約 70 秒、実時間)
+- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(約 2 分、1920x1080。説明スライド + dora 版の実行 67 秒、等速)
+- 実行部分のみ: `runs/seed1/cloth_sort.mp4`(単一プロセス版、約 70 秒)、`runs/dora/cloth_sort_dora.mp4`(dora 版)
 - 報告書: `report/report.pdf`(元は `report/report.html`)
 - 実機は未接続。アームは `RobotArm` インターフェースの仮想実装(`VirtualArm`)で、実機対応はこの 1 クラスを足す形
 
@@ -23,7 +24,10 @@ export PYTHONPATH=$PWD
 
 # 3. dora-rs で分散実行(sim / brain / recorder の 3 ノード)
 ./run_dora.sh
-./run_dora.sh graph     # 配線図
+./run_dora.sh graph     # 構成図
+
+# 4. 提出用の動画(スライド + dora 版の実行フレーム)を作る
+.venv/bin/python tools/make_submission_video.py --frames runs/dora/frames --log runs/dora/log.jsonl
 
 # テスト
 .venv/bin/python -m pytest -q
@@ -46,7 +50,7 @@ cloth_sort/
   pipeline.py          単一プロセスの実行(動画・ログ生成)
   nodes/               dora ノード(sim / brain / recorder)
   viewer.py            動画フレームの描画
-dataflow.yml           dora の配線
+dataflow.yml           dora のノード構成(つなぎ方)
 tests/                 pytest
 ```
 
