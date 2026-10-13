@@ -1,7 +1,8 @@
 """単一プロセスで「撮影 → 検出 → 読み取り → 計画 → 実行 → 検証」を回し、動画フレームとログを出す。
 
 dora 版(cloth_sort/nodes)と同じ部品を使う。こちらは決定的に動くので、テストと動画作成に使う。
-使い方:  python -m cloth_sort.pipeline --seed 1 --n 12 --out runs/seed1 --video
+使い方:  python -m cloth_sort.pipeline --seed 1 --n 12 --out runs/seed1 --video            # 2D 版
+         python -m cloth_sort.pipeline --backend mujoco --seed 1 --n 12 --out runs/mj1 --video  # MuJoCo 版
 """
 
 from __future__ import annotations
@@ -24,9 +25,20 @@ from cloth_sort.viewer import Overlay, render_frame
 PHASE_JA = {
     Phase.APPROACH: "布片の上へ移動", Phase.DESCEND: "降下", Phase.GRIP: "把持", Phase.LIFT: "持ち上げ",
     Phase.CARRY: "置き場へ搬送", Phase.LOWER: "降下", Phase.RELEASE: "リリース", Phase.RETREAT: "退避",
-    Phase.DONE: "完了", Phase.FAILED: "失敗",
+    Phase.PARK: "視野外へ退避", Phase.DONE: "完了", Phase.FAILED: "失敗",
 }
 HOME = (config.ARM_BASE[0], config.ARM_BASE[1] - 40)
+
+
+def make_world_and_arm(backend: str, n_pieces: int, seed: int):
+    """backend に応じて世界とアームを作る。"2d" は自前の 2D シミュレータ、"mujoco" は MuJoCo + Panda。"""
+    if backend == "mujoco":
+        from cloth_sort.sim.mujoco_world import MujocoArm, MujocoWorld
+        world = MujocoWorld.random_scene(n_pieces, seed)
+        world.step(0.3)                       # 布片が机に落ち着くまで
+        return world, MujocoArm(world)
+    world = World.random_scene(n_pieces, seed)
+    return world, VirtualArm(world)
 
 
 class FrameWriter:
@@ -40,26 +52,25 @@ class FrameWriter:
                 shutil.rmtree(out_dir)
             out_dir.mkdir(parents=True)
 
-    def maybe(self, world: World, ov: Overlay, force: bool = False) -> None:
+    def maybe(self, world, ov: Overlay, force: bool = False) -> None:
         self.tick += 1
         if self.dir is None or (not force and self.tick % self.every != 0):
             return
         render_frame(world, ov).save(self.dir / f"{self.count:05d}.png")
         self.count += 1
 
-    def hold(self, world: World, ov: Overlay, seconds: float, fps: float) -> None:
+    def hold(self, world, ov: Overlay, seconds: float, fps: float) -> None:
         for _ in range(int(seconds * fps)):
             self.maybe(world, ov, force=True)
 
 
 def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None, dt: float = 0.05,
-        frame_every: int = 2, min_confidence: float = 0.6) -> dict:
-    world = World.random_scene(n_pieces, seed)
+        frame_every: int = 2, min_confidence: float = 0.6, backend: str = "2d") -> dict:
+    world, arm = make_world_and_arm(backend, n_pieces, seed)
     reader = LabelReader(weights) if weights else LabelReader()
     reader.min_confidence = min_confidence
     planner = Planner(min_confidence)
-    arm = VirtualArm(world)
-    ov = Overlay(total=n_pieces, speed_note="実時間 / real-time")
+    ov = Overlay(total=n_pieces, speed_note="実時間 / real-time" + ("  MuJoCo" if backend == "mujoco" else ""))
     fps = 1.0 / (dt * frame_every)
     frames = FrameWriter(out / "frames" if out else None, frame_every)
     records: list[dict] = []
@@ -86,6 +97,8 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
         records.append({"event": "read", "pick_xy": d.center, "read": r.text, "conf": round(r.confidence, 3),
                         "truth": gt.label if gt else None})
     ov.log.append(f"検出 {len(dets)} 枚、読み取り {time.time() - t0:.2f} s")
+    if out:
+        _save_detection_image(image, ov, out / "top_detect.png")
     frames.hold(world, ov, 2.0, fps)
 
     # 2. 計画
@@ -118,7 +131,7 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
             ov.log.append(f"#{i} → 要確認 ({task.reason})")
         else:
             ov.done += 1
-            mark = "OK" if outcome["verified"] else "NG"
+            mark = "OK" if outcome["verified"] else ("要確認(読み直しの確信度が低い)" if outcome.get("uncertain") else "NG")
             ov.log.append(f"#{i} 番号 {task.label} → 置き場 {task.label}  検証 {mark}")
 
     ov.status = "完了"
@@ -127,7 +140,8 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
     correct = sum(1 for r in records if r["event"] == "place" and r.get("verified"))
     ov.log.append(f"置き場へ {ov.done} 枚(検証 OK {correct})、要確認 {ov.review} 枚、所要 {world.time_s:.0f} s")
     # 退避
-    while not arm.move_to(HOME, 1.0, dt):
+    park = arm.park if hasattr(arm, "park") else (lambda dt: arm.move_to(HOME, 1.0, dt))
+    while not park(dt):
         world.time_s += dt
         frames.maybe(world, ov)
     frames.hold(world, ov, 3.0, fps)
@@ -139,12 +153,21 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
     return summary
 
 
+def _save_detection_image(image, ov: Overlay, path: Path) -> None:
+    """俯瞰カメラ画像に検出枠と読み取り結果を重ねて保存する(報告書・動画のスライド用)。"""
+    from PIL import Image, ImageDraw
+    from cloth_sort.viewer import _draw_detections
+    img = Image.fromarray(image)
+    _draw_detections(ImageDraw.Draw(img), ov, 0, 0)
+    img.save(path)
+
+
 def _far(bbox: tuple[int, int, int, int], xy: tuple[float, float]) -> bool:
     cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
     return abs(cx - xy[0]) > 5 or abs(cy - xy[1]) > 5
 
 
-def _verify(world: World, reader: LabelReader, task: Task, truth: dict[int, str]) -> dict:
+def _verify(world, reader: LabelReader, task: Task, truth: dict[int, str]) -> dict:
     """置いた位置を撮り直して番号を読み、計画どおりかを確かめる(自己検証)。"""
     piece = world.piece_at(task.place_xy)
     if piece is None:
@@ -158,10 +181,13 @@ def _verify(world: World, reader: LabelReader, task: Task, truth: dict[int, str]
         verified = r.text == task.label and truth[piece.id] == task.label
     else:
         verified = True
-    return {"verified": bool(verified), "truth": truth[piece.id], "reread": r.text, "reread_conf": round(r.confidence, 3)}
+    # 読み直しの確信度が低いときは「不一致」ではなく「人が見る」扱い(要確認)にする
+    uncertain = (not verified) and r.confidence < reader.min_confidence
+    return {"verified": bool(verified), "uncertain": bool(uncertain), "truth": truth[piece.id],
+            "reread": r.text, "reread_conf": round(r.confidence, 3)}
 
 
-def _summary(records: list[dict], world: World, tasks: list[Task]) -> dict:
+def _summary(records: list[dict], world, tasks: list[Task]) -> dict:
     reads = [r for r in records if r["event"] == "read"]
     places = [r for r in records if r["event"] == "place"]
     return {
@@ -170,6 +196,7 @@ def _summary(records: list[dict], world: World, tasks: list[Task]) -> dict:
         "read_correct": sum(r["read"] == r["truth"] for r in reads),
         "placed_slot": sum(p["dest"] == "slot" for p in places),
         "placed_slot_verified": sum(p["dest"] == "slot" and p["verified"] for p in places),
+        "verify_uncertain": sum(p["dest"] == "slot" and p.get("uncertain", False) for p in places),
         "review": sum(p["dest"] == "review" for p in places),
         "wrong_slot": sum(p["dest"] == "slot" and p["truth"] != p["label"] for p in places),
         "sim_seconds": round(world.time_s, 1),
@@ -192,8 +219,9 @@ def main() -> None:
     ap.add_argument("--video", action="store_true")
     ap.add_argument("--dt", type=float, default=0.05)
     ap.add_argument("--frame-every", type=int, default=2)
+    ap.add_argument("--backend", choices=["2d", "mujoco"], default="2d")
     a = ap.parse_args()
-    s = run(a.seed, a.n, a.out, a.weights, a.dt, a.frame_every)
+    s = run(a.seed, a.n, a.out, a.weights, a.dt, a.frame_every, backend=a.backend)
     print(json.dumps(s, ensure_ascii=False, indent=2))
     if a.video:
         make_video(a.out / "frames", a.out / "cloth_sort.mp4", 1.0 / (a.dt * a.frame_every))

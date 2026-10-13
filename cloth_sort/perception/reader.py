@@ -62,6 +62,24 @@ def _components(mask: np.ndarray) -> list[tuple[int, int, int, int]]:
     return boxes
 
 
+def _drop_edge_artifacts(boxes: list[tuple[int, int, int, int]], shape: tuple[int, int],
+                         max_thickness: int = 3, margin: int = 4) -> list[tuple[int, int, int, int]]:
+    """切り出しの縁に張り付いた細長い成分(布片の側面の影など)を落とす。
+
+    斜めから見た布片の縁が暗い線として写ると「1」と誤読するので、縁から margin px 以内にあり
+    太さ max_thickness px 以下で、切り出しの半分以上の長さがある線は文字とみなさない。
+    """
+    h, w = shape
+    out = []
+    for x0, y0, x1, y1 in boxes:
+        bw, bh = x1 - x0, y1 - y0
+        on_side = (x0 <= margin or x1 >= w - margin) and bw <= max_thickness and bh >= h * 0.5
+        on_top = (y0 <= margin or y1 >= h - margin) and bh <= max_thickness and bw >= w * 0.5
+        if not (on_side or on_top):
+            out.append((x0, y0, x1, y1))
+    return out
+
+
 def _merge_vertical(boxes: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
     """x 範囲が重なる成分は同じ文字(「i」の点のような分離)として縦に結合する。"""
     boxes = sorted(boxes, key=lambda b: b[0])
@@ -88,7 +106,7 @@ class LabelReader:
     @torch.no_grad()
     def read(self, crop: np.ndarray) -> Reading:
         mask = ink_mask(crop)
-        boxes = _merge_vertical(_components(mask))
+        boxes = _merge_vertical(_drop_edge_artifacts(_components(mask), mask.shape))
         if not boxes:
             return Reading("", 0.0, ())
         chars = np.stack([normalize_char(mask[y0:y1, x0:x1].astype(np.float32)) for x0, y0, x1, y1 in boxes])

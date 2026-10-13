@@ -40,6 +40,7 @@ class Phase(str, Enum):
     LOWER = "lower"           # 降ろす
     RELEASE = "release"       # 放す
     RETREAT = "retreat"       # 上空へ戻る
+    PARK = "park"             # カメラの視野外へ退避(退避位置を持つアームのみ)
     DONE = "done"
     FAILED = "failed"
 
@@ -135,6 +136,11 @@ class PickPlace:
                 self.phase = Phase.RETREAT
         elif self.phase is Phase.RETREAT:
             if a.move_to(self.place_xy, 1.0, dt):
+                # 退避位置を持つアーム(MuJoCo 版)はカメラの視野外へ下がってから完了にする。
+                # 置いた布片をカメラで検証するとき、アームが上に被らないようにするため
+                self.phase = Phase.PARK if hasattr(a, "park") else Phase.DONE
+        elif self.phase is Phase.PARK:
+            if a.park(dt):   # type: ignore[attr-defined]
                 self.phase = Phase.DONE
         return self.phase
 

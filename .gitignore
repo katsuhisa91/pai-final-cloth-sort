@@ -6,3 +6,4 @@ runs/dora/
 out/
 .pytest_cache/
 .DS_Store
+runs/mj1/

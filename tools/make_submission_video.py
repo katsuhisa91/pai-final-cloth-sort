@@ -3,7 +3,7 @@
     .venv/bin/python tools/make_submission_video.py --frames runs/dora/frames --out runs/submission/PAI最終課題_katsuhisa91.mp4
 
 構成: タイトル → 課題 → 仕組み → AI → 実行の様子(等速) → 結果 → 工夫と次の一歩。
-実行の様子は dora 版(runs/dora/frames)のフレームをそのまま使い、倍速はかけない。
+実行の様子は dora 版(runs/dora/frames、MuJoCo で描画した 1920x1080)のフレームをそのまま使い、倍速はかけない。
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ WARN = (250, 150, 90)
 OK = (120, 210, 130)
 RED = (220, 80, 80)
 ACCOUNT = "katsuhisa91"
+SEED = 4
 
 
 def font(size: int, bold: bool = False):
@@ -52,7 +53,7 @@ def wrap(d: ImageDraw.ImageDraw, text: str, f, max_w: int) -> list[str]:
 def new_canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.text((60, H - 50), f"PAI最終課題_{ACCOUNT}   等速再生(倍速なし)   シミュレーション", fill=DIM, font=font(22))
+    d.text((60, H - 50), f"PAI最終課題_{ACCOUNT}   等速再生(倍速なし)   MuJoCo シミュレーション", fill=DIM, font=font(22))
     return img, d
 
 
@@ -106,8 +107,8 @@ def slide_title() -> Image.Image:
     d.text((120, 440), "手書きの番号を読み取り、番号どおりの置き場へ運ぶ", fill=FG, font=font(44))
     d.text((120, 560), "Physical AI 応用編1 最終課題", fill=ACCENT, font=font(36, bold=True))
     d.text((120, 615), f"omnicampus: {ACCOUNT}", fill=DIM, font=font(32))
-    d.text((120, 760), "カメラ → 検出 → 番号読み取り(自前学習 CNN) → 計画 → 仮想アーム → 検証", fill=DIM, font=font(30))
-    d.text((120, 805), "dora-rs の dataflow として 3 ノードで実行", fill=DIM, font=font(30))
+    d.text((120, 760), "カメラ → 検出 → 番号読み取り(自前学習 CNN) → 計画 → アーム制御(IK) → 検証", fill=DIM, font=font(30))
+    d.text((120, 805), "MuJoCo の物理シミュレーション上の Franka Panda を、dora-rs の 3 ノードで動かす", fill=DIM, font=font(30))
     return img
 
 
@@ -122,13 +123,14 @@ def slide_task(fig: Path | None) -> Image.Image:
     bullets(d, items, 90, y + 10, 800, size=30)
     if fig and fig.exists():
         im = Image.open(fig).convert("RGB")
-        # 作業台の部分(左 1230 px)だけを切り出して右に置く
-        im = im.crop((30, 90, 1230, 690))
+        if im.size != (1200, 600):
+            # 2D 版のフレーム(1710x720)なら作業台の部分だけを切り出す
+            im = im.crop((30, 90, 1230, 690))
         im.thumbnail((880, 440))
         x = W - im.width - 80
         img.paste(im, (x, 190))
         d.rectangle([x - 1, 189, x + im.width, 190 + im.height], outline=(80, 80, 90))
-        d.text((x, 190 + im.height + 12), "俯瞰カメラ画像と検出結果(緑: 確信度 0.6 以上、橙: 未満)", fill=DIM, font=font(24))
+        d.text((x, 190 + im.height + 12), "MuJoCo の俯瞰カメラ画像と検出結果(緑: 確信度 0.6 以上、橙: 未満)", fill=DIM, font=font(24))
     return img
 
 
@@ -140,8 +142,8 @@ def slide_system() -> Image.Image:
         ("背景差分で検出", "布の色に依らない"),
         ("番号読み取り", "1 文字 CNN + 分割"),
         ("計画", "確信度 0.6 以上は置き場、未満は要確認"),
-        ("pick & place", "仮想アーム"),
-        ("検証", "置いた後に再撮影し照合"),
+        ("pick & place", "Panda を IK で制御"),
+        ("検証", "退避後に再撮影し照合"),
     ]
     bw, gap, top = 262, 44, y + 30
     x = 80
@@ -154,14 +156,16 @@ def slide_system() -> Image.Image:
     y2 = top + 230
            fill=FG, font=font(30, bold=True))
     y3 = y2 + 70
-    box(d, (160, y3, 620, y3 + 170), "sim(ロボット側)", "世界・カメラ・アーム。image / result を送る", outline=OK)
+    box(d, (160, y3, 620, y3 + 170), "sim(ロボット側)", "MuJoCo の世界・カメラ・Panda。画像と結果を送る", outline=OK)
     box(d, (730, y3, 1190, y3 + 170), "brain(AI 側)", "検出・読み取り・計画。task / finish を送る", outline=ACCENT)
     box(d, (1300, y3, 1760, y3 + 170), "recorder(記録)", "reading / record を JSONL に残す", outline=WARN)
     arrow(d, 624, y3 + 60, 726)
     arrow(d, 726, y3 + 110, 624)
     arrow(d, 1194, y3 + 85, 1296)
-    d.text((160, y3 + 200), "実機化はロボット側(sim)の RobotArm 実装を 1 つ差し替えるだけ。AI 側と記録は変更なし",
-           fill=DIM, font=font(28))
+    d.text((160, y3 + 200), "物理: MuJoCo 3(Apache-2.0)。アーム: mujoco_menagerie の Franka Panda + 吸着ツール。把持は吸着の模擬(接触で固定)",
+           fill=DIM, font=font(26))
+    d.text((160, y3 + 240), "実機化はロボット側(sim)の RobotArm 実装を 1 つ差し替えるだけ。AI 側と記録は変更なし",
+           fill=DIM, font=font(26))
     return img
 
 
@@ -188,7 +192,7 @@ def slide_ai(metrics: dict | None) -> Image.Image:
 
 def slide_results(summary: dict, log: list[dict]) -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, f"結果({summary['pieces']} 枚、seed 1)")
+    y = heading(d, f"結果({summary['pieces']} 枚、seed {SEED})")
     stats = [
         ("検出", f"{summary['detected']} / {summary['pieces']}", OK),
         ("正しく読めた", f"{summary['read_correct']} / {summary['pieces']}", OK),
@@ -220,7 +224,7 @@ def slide_results(summary: dict, log: list[dict]) -> Image.Image:
     bullets(d, rows, 90, y2 + 60, 1760, size=32)
     d.text((80, 880), "読み違えた布片はすべて要確認へ回り、誤った置き場には 1 枚も置かれなかった",
            fill=ACCENT, font=font(34, bold=True))
-    d.text((80, 935), f"シミュレーション時間 {summary['sim_seconds']:.0f} 秒(等速)、dora の 3 ノードでも単一プロセスでも同じ結果",
+    d.text((80, 935), f"シミュレーション時間 {summary['sim_seconds']:.0f} 秒(等速、MuJoCo)。dora の 3 ノードでも単一プロセスでも同じ判断",
            fill=DIM, font=font(26))
     return img
 
@@ -232,12 +236,13 @@ def slide_next() -> Image.Image:
     bullets(d, [
         "迷ったら止めずに人へ回す設計。誤配置ゼロを最優先にした",
         "置いた後に読み直す自己検証。判断とその根拠を JSONL に残し、再学習の種にできる",
-        "ロボット側と AI 側を dora で分離。実機化は RobotArm 1 クラスの差し替え",
+        "ロボット側と AI 側を dora で分離。2D 版 → MuJoCo 版の載せ替えも RobotArm 1 クラスの差し替えで済んだ",
+        "アームの到達範囲を MuJoCo の IK で実測し、作業台のレイアウトを決めた",
     ], 90, y + 60, 880, size=30)
     d.text((1000, y), "次の一歩", fill=WARN, font=font(36, bold=True))
     bullets(d, [
         "SO-101 など LeRobot 対応アームで RobotArm を実装し、実機で同じ dataflow を動かす",
-        "把持と接触の物理は MuJoCo / Gazebo で先に確認する",
+        "吸着の模擬を、吸着ハンドの実機か布の変形を含む接触モデルで置き換える",
     ], 1010, y + 60, 840, size=30)
     d.text((80, 900), "コード: github.com/katsuhisa91/pai-final-cloth-sort(Apache-2.0)", fill=FG, font=font(32, bold=True))
     return img
@@ -246,6 +251,9 @@ def slide_next() -> Image.Image:
 # ---------- 実行の様子(フレーム合成) ----------
 
 def compose_frame(src: Image.Image) -> Image.Image:
+    if src.size == (W, H):
+        # MuJoCo 版のフレームは 1920x1080 で、タイトル・3D 視点・俯瞰カメラ・パネルを含む。そのまま使う
+        return src.convert("RGB")
     img, d = new_canvas()
     scaled = src.convert("RGB").resize((W, int(src.height * W / src.width)), Image.LANCZOS)
     top = 100
@@ -266,13 +274,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--frames", default="runs/dora/frames")
     ap.add_argument("--log", default="runs/dora/log.jsonl")
-    ap.add_argument("--summary", default="runs/seed1/summary.json")
+    ap.add_argument("--summary", default="runs/mj4/summary.json")
     ap.add_argument("--metrics", default="models/metrics.json")
-    ap.add_argument("--fig", default="report/fig1_detect.png")
+    ap.add_argument("--fig", default="runs/mj4/top_detect.png")
+    ap.add_argument("--seed", type=int, default=4)
     ap.add_argument("--out", default=f"runs/submission/PAI最終課題_{ACCOUNT}.mp4")
     ap.add_argument("--slides-dir", default="runs/submission/slides")
     args = ap.parse_args()
 
+    global SEED
+    SEED = args.seed
     frames = sorted(Path(args.frames).glob("*.png"))
     if not frames:
         raise SystemExit(f"フレームがありません: {args.frames}(先に ./run_dora.sh を実行)")
@@ -281,14 +292,14 @@ def main() -> None:
     metrics = json.loads(Path(args.metrics).read_text()) if Path(args.metrics).exists() else None
 
     slides: list[tuple[str, Image.Image, float]] = [
-        ("01_title", slide_title(), 6.0),
-        ("02_task", slide_task(Path(args.fig)), 10.0),
-        ("03_system", slide_system(), 12.0),
-        ("04_ai", slide_ai(metrics), 9.0),
+        ("01_title", slide_title(), 5.0),
+        ("02_task", slide_task(Path(args.fig)), 8.0),
+        ("03_system", slide_system(), 11.0),
+        ("04_ai", slide_ai(metrics), 8.0),
     ]
     outro: list[tuple[str, Image.Image, float]] = [
-        ("06_results", slide_results(summary, log), 10.0),
-        ("07_next", slide_next(), 10.0),
+        ("06_results", slide_results(summary, log), 9.0),
+        ("07_next", slide_next(), 9.0),
     ]
     slides_dir = Path(args.slides_dir)
     slides_dir.mkdir(parents=True, exist_ok=True)

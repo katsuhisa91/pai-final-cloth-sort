@@ -20,9 +20,8 @@ from dora import Node
 
 from cloth_sort import config
 from cloth_sort.nodes.common import image_to_arrow, json_to_arrow, arrow_to_json
-from cloth_sort.pipeline import HOME, PHASE_JA
-from cloth_sort.robot.executor import PickPlace, VirtualArm
-from cloth_sort.sim.world import World
+from cloth_sort.pipeline import HOME, PHASE_JA, make_world_and_arm
+from cloth_sort.robot.executor import PickPlace
 from cloth_sort.viewer import Overlay, render_frame
 
 SEED = int(os.environ.get("SEED", "1"))
@@ -30,13 +29,14 @@ N_PIECES = int(os.environ.get("N_PIECES", "12"))
 DT = float(os.environ.get("DT", "0.05"))
 FRAME_DIR = Path(os.environ.get("FRAME_DIR", "runs/dora/frames"))
 FRAME_EVERY = int(os.environ.get("FRAME_EVERY", "2"))
+BACKEND = os.environ.get("BACKEND", "2d")          # "2d" or "mujoco"
 
 
 def main() -> None:
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
-    world = World.random_scene(N_PIECES, SEED)
-    arm = VirtualArm(world)
-    ov = Overlay(total=N_PIECES, speed_note="dora-rs 分散実行")
+    world, arm = make_world_and_arm(BACKEND, N_PIECES, SEED)
+    park = arm.park if hasattr(arm, "park") else (lambda dt: arm.move_to(HOME, 1.0, dt))
+    ov = Overlay(total=N_PIECES, speed_note="dora-rs 分散実行" + ("  MuJoCo" if BACKEND == "mujoco" else ""))
     node = Node()
     current: PickPlace | None = None
     current_task: dict | None = None
@@ -85,7 +85,7 @@ def main() -> None:
                         ov.log.append(f"#{current_task['index']} 番号 {current_task['label'] or '?'} → {ov.current_dest}")
                         current = None
                 elif ticks_after_finish >= 0:
-                    arm.move_to(HOME, 1.0, DT)
+                    park(DT)
                     world.time_s += DT
                     ticks_after_finish -= 1
                 if tick % FRAME_EVERY == 0:

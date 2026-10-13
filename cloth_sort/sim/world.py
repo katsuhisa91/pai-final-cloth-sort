@@ -156,22 +156,34 @@ class World:
         d.rectangle([x0, y0, x1, y1], outline=(170, 60, 60, 255), width=2)
         d.text((x0 + 8, y0 + 4), "要確認 / review", fill=(170, 60, 60, 255), font=fonts.ui_font(18))
 
+    def piece_texture(self, p: Piece, scale: int = 1) -> Image.Image:
+        """回転前の布片の見た目(織り目 + 手書き番号)。scale 倍の解像度で描く(MuJoCo のテクスチャ用)。
+
+        乱数は布片 id から決めるので、scale が違っても同じ筆跡・同じ位置に番号が入る。
+        """
+        s = config.PIECE_MM * scale
+        rng = random.Random(p.id * 7919 + 13)
+        base = Image.new("RGBA", (s, s), p.color + (255,))
+        d = ImageDraw.Draw(base)
+        weave = tuple(max(0, c - 10) for c in p.color) + (255,)
+        for i in range(0, s, 4 * scale):
+            d.line([(i, 0), (i, s)], fill=weave, width=scale)
+        synth.draw_label(base, p.label, (s - 4 * scale, s - 2 * scale), size_px=rng.randint(13, 17) * scale,
+                         rng=rng, font_pool=self.label_fonts)
+        return base
+
     def _piece_image(self, p: Piece) -> Image.Image:
         if p.id in self._label_cache:
             return self._label_cache[p.id]
-        s = config.PIECE_MM
-        rng = random.Random(p.id * 7919 + 13)
-        base = Image.new("RGBA", (s, s), p.color + (255,))
-        # 織り目: 薄い格子
-        d = ImageDraw.Draw(base)
-        weave = tuple(max(0, c - 10) for c in p.color) + (255,)
-        for i in range(0, s, 4):
-            d.line([(i, 0), (i, s)], fill=weave, width=1)
-        synth.draw_label(base, p.label, (s - 4, s - 2), size_px=rng.randint(13, 17), rng=rng,
-                         font_pool=self.label_fonts)
-        rot = base.rotate(p.angle_deg, resample=Image.BICUBIC, expand=True)
+        rot = self.piece_texture(p).rotate(p.angle_deg, resample=Image.BICUBIC, expand=True)
         self._label_cache[p.id] = rot
         return rot
+
+    def bench_texture(self) -> Image.Image:
+        """机の天板(木目 + 置き場の線)。MuJoCo 版が天板テクスチャとして使う。"""
+        img = self._render_bench()
+        self._draw_board(img)
+        return img
 
     def _paste_piece(self, img: Image.Image, p: Piece, lifted: bool = False) -> None:
         tile = self._piece_image(p)

@@ -13,7 +13,7 @@ PX_PER_MM = 1.0
 PIECE_MM = 50            # 5 cm 角
 PIECE_MIN_GAP_MM = 18    # 配置時に確保する最小すき間(重なりは本課題の対象外)
 
-SOURCE_AREA = (60, 60, 540, 540)  # x0, y0, x1, y1
+SOURCE_AREA = (100, 70, 540, 470)  # x0, y0, x1, y1
 
 # 番号つきの置き場(ボード)。5 列 × 4 行、番号 1〜20
 BOARD_ORIGIN = (640, 80)
@@ -22,12 +22,12 @@ BOARD_COLS = 5
 BOARD_ROWS = 4
 SLOT_LABELS = [str(i) for i in range(1, BOARD_COLS * BOARD_ROWS + 1)]
 
-# 読み取れなかった布片を逃がす「要確認トレイ」
-REVIEW_TRAY = (640, 500, 1140, 580)
+# 読み取れなかった布片を逃がす「要確認トレイ」(布片領域の下。土台の直前はアームが届かないので避ける)
+REVIEW_TRAY = (100, 500, 560, 580)
 REVIEW_TRAY_PITCH_MM = 60
 
-# アームの土台(作業台の下辺中央)
-ARM_BASE = (600, 600)
+# アームの土台(作業台の下辺中央から 10 cm 外。机面と同じ高さ)
+ARM_BASE = (600, 700)
 
 
 @dataclass(frozen=True)

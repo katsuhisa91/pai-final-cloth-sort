@@ -1,0 +1,11 @@
+{
+  "pieces": 12,
+  "detected": 12,
+  "read_correct": 10,
+  "placed_slot": 10,
+  "placed_slot_verified": 10,
+  "verify_uncertain": 0,
+  "review": 2,
+  "wrong_slot": 0,
+  "sim_seconds": 103.0
+}
