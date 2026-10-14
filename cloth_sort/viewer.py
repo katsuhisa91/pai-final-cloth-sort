@@ -131,10 +131,10 @@ def _render_frame_mujoco(world, ov: Overlay) -> Image.Image:
         hx, hy = vx, vy + vh + 36
         frame.paste(hand, (hx, hy))
         d.rectangle([hx - 1, hy - 1, hx + hand.width, hy + hand.height], outline=(80, 80, 90), width=1)
-        d.text((hx + hand.width + 16, hy), "ハンド追従カメラ", fill=DIM, font=fonts.ui_font(16))
+        d.text((hx + hand.width + 16, hy), "手首カメラ(ハンドに固定。可視化用で、AI は右上の俯瞰カメラだけを使う)", fill=DIM, font=fonts.ui_font(16))
         d.text((hx + hand.width + 16, hy + 26), "左指のゴムパッド(2.5 mm 長い唇)で布の縁を押して", fill=DIM, font=fonts.ui_font(15))
         d.text((hx + hand.width + 16, hy + 48), "折り目を作り、右指との間でつまむ。持ち上げ・搬送は", fill=DIM, font=fonts.ui_font(15))
-        d.text((hx + hand.width + 16, hy + 70), "抜けないよう 3〜6 cm/s。置き場の上で放して落とす。", fill=DIM, font=fonts.ui_font(15))
+        d.text((hx + hand.width + 16, hy + 70), "抜けないよう 3〜5 cm/s。置き場の上で放して落とす。", fill=DIM, font=fonts.ui_font(15))
         d.text((hx + hand.width + 16, hy + 100), "つかみ損ねたら撮り直して最大 2 回まで再試行。", fill=DIM, font=fonts.ui_font(15))
         d.text((hx + hand.width + 16, hy + 122), "それでも駄目なら要確認へ(人が拾う)。", fill=DIM, font=fonts.ui_font(15))
     else:

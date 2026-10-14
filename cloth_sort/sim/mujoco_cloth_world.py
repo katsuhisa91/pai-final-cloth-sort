@@ -98,7 +98,6 @@ class MujocoClothWorld:
         mujoco.mj_forward(model, data)
         w = cls(layout=layout, model=model, data=data)
         w._sync_pieces()
-        w._follow_hand()
         return w
 
     @staticmethod
@@ -158,9 +157,6 @@ class MujocoClothWorld:
     <geom name="pedestal" type="cylinder" size="0.095 0.375" pos="0 0 -0.375" material="mat_pedestal" contype="0" conaffinity="0"/>
     <camera name="top" pos="{cx} {cy} {TOP_CAM_H}" xyaxes="1 0 0 0 1 0" fovy="{fovy:.4f}"/>
     <camera name="iso" pos="{' '.join(f'{v:.4f}' for v in iso_pos)}" xyaxes="{iso_axes}" fovy="40"/>
-    <body name="handcam_mount" mocap="true" pos="0 0 0.6">
-      <camera name="handcam" pos="0 0 0" xyaxes="-0.7634 0.6459 0.0000 -0.3390 -0.4007 0.8512" fovy="30"/>
-    </body>
     {chr(10).join(cloth_xml)}
   </worldbody>
   <contact>
@@ -206,21 +202,11 @@ class MujocoClothWorld:
             c = self.cloth_vertices(p.id).mean(axis=0)
             p.center = world_to_mm(float(c[0]), float(c[1]))
 
-    HANDCAM_OFFSET = np.array([0.22, 0.26, 0.10])   # ハンドから見たカメラ位置(世界座標、ロボットの反対側の斜め上)
-
     def step(self, seconds: float) -> None:
         n = max(1, int(round(seconds / self.model.opt.timestep)))
         for _ in range(n):
             mujoco.mj_step(self.model, self.data)
         self._sync_pieces()
-        self._follow_hand()
-
-    def _follow_hand(self) -> None:
-        """ハンド追従カメラの台(mocap)をハンドの位置に合わせる。向きは固定。"""
-        hand = self.data.xpos[self.model.body("hand").id]
-        self.data.mocap_pos[0] = hand + self.HANDCAM_OFFSET
-        mujoco.mj_kinematics(self.model, self.data)
-        mujoco.mj_camlight(self.model, self.data)
 
     def rubber_contacts(self, piece_id: int) -> int:
         """ゴムパッドとこの布の接触数。"""
@@ -266,9 +252,9 @@ class MujocoClothWorld:
         return Image.fromarray(r.render().copy())
 
     def render_hand(self, width: int = 560, height: int = 280) -> Image.Image:
-        """ハンドに追従する近接カメラ(つまむ様子を見せる)。"""
-        r = self._renderer("handcam", width, height)
-        r.update_scene(self.data, camera="handcam")
+        """手首カメラ(ハンドに固定、指先を見下ろす)。実機の eye-in-hand に相当。AI は使わず、可視化のみ。"""
+        r = self._renderer("wristcam", width, height)
+        r.update_scene(self.data, camera="wristcam")
         return Image.fromarray(r.render().copy())
 
     def render_scene(self) -> Image.Image:

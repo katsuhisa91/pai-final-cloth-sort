@@ -229,6 +229,8 @@
       <geom mesh="hand_3" material="white" class="visual"/>
       <geom mesh="hand_4" material="off_white" class="visual"/>
       <geom mesh="hand_c" class="collision"/>
+      <!-- 手首カメラ(本リポジトリで追加): ハンドの側面に固定し、指先を見下ろす。実機の eye-in-hand に相当。可視化にのみ使う -->
+      <camera name="wristcam" pos="0.07 0 0.02" xyaxes="0 1 0 0.866 0 0.5" fovy="60"/>
       <site name="tool_tip" pos="0 0 0.1174" size="0.004" rgba="1 0.3 0.2 1"/>
       <body name="left_finger" pos="0 0 0.0584" gravcomp="1">
         <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7"/>
