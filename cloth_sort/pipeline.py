@@ -37,6 +37,11 @@ def make_world_and_arm(backend: str, n_pieces: int, seed: int):
         world = MujocoWorld.random_scene(n_pieces, seed)
         world.step(0.3)                       # 布片が机に落ち着くまで
         return world, MujocoArm(world)
+    if backend == "cloth":
+        from cloth_sort.sim.mujoco_cloth_world import GripperArm, MujocoClothWorld
+        world = MujocoClothWorld.random_scene(n_pieces, seed)
+        world.step(0.4)                       # 布が机に落ち着くまで
+        return world, GripperArm(world)
     world = World.random_scene(n_pieces, seed)
     return world, VirtualArm(world)
 
@@ -70,7 +75,8 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
     reader = LabelReader(weights) if weights else LabelReader()
     reader.min_confidence = min_confidence
     planner = Planner(min_confidence)
-    ov = Overlay(total=n_pieces, speed_note="実時間 / real-time" + ("  MuJoCo" if backend == "mujoco" else ""))
+    notes = {"mujoco": "  MuJoCo", "cloth": "  MuJoCo(変形体の布 + 2 本指)"}
+    ov = Overlay(total=n_pieces, speed_note="実時間 / real-time" + notes.get(backend, ""))
     fps = 1.0 / (dt * frame_every)
     frames = FrameWriter(out / "frames" if out else None, frame_every)
     records: list[dict] = []
@@ -82,6 +88,7 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
 
     # 0. 段取り: 何も置いていない机を撮っておく(背景差分の基準)
     background = world.render_camera(include_pieces=False)
+    world.background = background        # 検証(置き場に布があるか)でも使う
 
     # 1. 撮影 → 検出 → 読み取り
     ov.status = "撮影・番号読み取り"
@@ -123,15 +130,23 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
             frames.maybe(world, ov)
         outcome = _verify(world, reader, task, truth)
         records.append({"event": "place", "label": task.label, "dest": task.destination.value,
-                        "reason": task.reason, "phase": pp.phase.value, **outcome})
+                        "reason": task.reason, "phase": pp.phase.value, "grip_retries": pp.grip_retries,
+                        "lost_in_transit": pp.lost_in_transit, **outcome})
         planner.mark_done(task)
         ov.detections = [dv for dv in ov.detections if _far(dv[0], task.pick_xy)]
         if task.destination is Destination.REVIEW:
             ov.review += 1
             ov.log.append(f"#{i} → 要確認 ({task.reason})")
+        elif pp.phase is Phase.FAILED:
+            why = "搬送中に落下" if pp.lost_in_transit else f"つかめず(再試行 {pp.grip_retries} 回)"
+            ov.log.append(f"#{i} 番号 {task.label} → {why}。要確認")
+            ov.review += 1
         else:
             ov.done += 1
-            mark = "OK" if outcome["verified"] else ("要確認(読み直しの確信度が低い)" if outcome.get("uncertain") else "NG")
+            if outcome.get("mode") == "presence":
+                mark = "OK(置き場に布あり)" if outcome["verified"] else "NG(置き場に布なし)"
+            else:
+                mark = "OK" if outcome["verified"] else ("要確認(読み直しの確信度が低い)" if outcome.get("uncertain") else "NG")
             ov.log.append(f"#{i} 番号 {task.label} → 置き場 {task.label}  検証 {mark}")
 
     ov.status = "完了"
@@ -168,8 +183,22 @@ def _far(bbox: tuple[int, int, int, int], xy: tuple[float, float]) -> bool:
 
 
 def _verify(world, reader: LabelReader, task: Task, truth: dict[int, str]) -> dict:
-    """置いた位置を撮り直して番号を読み、計画どおりかを確かめる(自己検証)。"""
-    piece = world.piece_at(task.place_xy)
+    """置いた位置を撮り直して番号を読み、計画どおりかを確かめる(自己検証)。
+
+    変形体の布(2 本指版)は折れて落ちるので番号は読み直せない。その場合は置き場の領域に
+    布があるかを背景差分で確かめる(verify_mode == "presence")。
+    """
+    piece = world.piece_at(task.place_xy, tol_mm=45)
+    if getattr(world, "verify_mode", "reread") == "presence":
+        image = world.render_camera()
+        half = config.PIECE_MM
+        region = (int(task.place_xy[0] - half), int(task.place_xy[1] - half),
+                  int(task.place_xy[0] + half), int(task.place_xy[1] + half))
+        dets = detect_pieces(image, world.background, region=region, min_area_mm2=400, max_area_mm2=20000)
+        present = len(dets) > 0
+        correct = piece is not None and (task.destination is not Destination.SLOT or truth[piece.id] == task.label)
+        return {"verified": bool(present and correct), "mode": "presence", "present": present,
+                "truth": truth[piece.id] if piece else None, "reread": "", "reread_conf": 0.0}
     if piece is None:
         return {"verified": False, "truth": None, "reread": ""}
     image = world.render_camera()
@@ -194,11 +223,13 @@ def _summary(records: list[dict], world, tasks: list[Task]) -> dict:
         "pieces": len(world.pieces),
         "detected": len(reads),
         "read_correct": sum(r["read"] == r["truth"] for r in reads),
-        "placed_slot": sum(p["dest"] == "slot" for p in places),
+        "placed_slot": sum(p["dest"] == "slot" and p["phase"] == "done" for p in places),
         "placed_slot_verified": sum(p["dest"] == "slot" and p["verified"] for p in places),
         "verify_uncertain": sum(p["dest"] == "slot" and p.get("uncertain", False) for p in places),
-        "review": sum(p["dest"] == "review" for p in places),
-        "wrong_slot": sum(p["dest"] == "slot" and p["truth"] != p["label"] for p in places),
+        "review": sum(p["dest"] == "review" and p["phase"] == "done" for p in places),
+        "wrong_slot": sum(p["dest"] == "slot" and p["phase"] == "done" and p["truth"] != p["label"] for p in places),
+        "grasp_failed": sum(p["phase"] == "failed" for p in places),
+        "grasp_retries": sum(p.get("grip_retries", 0) for p in places),
         "sim_seconds": round(world.time_s, 1),
     }
 
@@ -219,7 +250,7 @@ def main() -> None:
     ap.add_argument("--video", action="store_true")
     ap.add_argument("--dt", type=float, default=0.05)
     ap.add_argument("--frame-every", type=int, default=2)
-    ap.add_argument("--backend", choices=["2d", "mujoco"], default="2d")
+    ap.add_argument("--backend", choices=["2d", "mujoco", "cloth"], default="2d")
     a = ap.parse_args()
     s = run(a.seed, a.n, a.out, a.weights, a.dt, a.frame_every, backend=a.backend)
     print(json.dumps(s, ensure_ascii=False, indent=2))

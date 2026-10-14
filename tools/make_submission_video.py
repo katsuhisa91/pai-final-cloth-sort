@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import subprocess
 from pathlib import Path
@@ -30,6 +31,11 @@ OK = (120, 210, 130)
 RED = (220, 80, 80)
 ACCOUNT = "katsuhisa91"
 SEED = 4
+SPEED = 1
+
+
+def speed_label() -> str:
+    return f"{SPEED} 倍速再生" if SPEED > 1 else "等速再生(倍速なし)"
 
 
 def font(size: int, bold: bool = False):
@@ -53,7 +59,7 @@ def wrap(d: ImageDraw.ImageDraw, text: str, f, max_w: int) -> list[str]:
 def new_canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.text((60, H - 50), f"PAI最終課題_{ACCOUNT}   等速再生(倍速なし)   MuJoCo シミュレーション", fill=DIM, font=font(22))
+    d.text((60, H - 50), f"PAI最終課題_{ACCOUNT}   実行部分は{speed_label()}   MuJoCo シミュレーション", fill=DIM, font=font(22))
     return img, d
 
 
@@ -108,7 +114,7 @@ def slide_title() -> Image.Image:
     d.text((120, 560), "Physical AI 応用編1 最終課題", fill=ACCENT, font=font(36, bold=True))
     d.text((120, 615), f"omnicampus: {ACCOUNT}", fill=DIM, font=font(32))
     d.text((120, 760), "カメラ → 検出 → 番号読み取り(自前学習 CNN) → 計画 → アーム制御(IK) → 検証", fill=DIM, font=font(30))
-    d.text((120, 805), "MuJoCo の物理シミュレーション上の Franka Panda を、dora-rs の 3 ノードで動かす", fill=DIM, font=font(30))
+    d.text((120, 805), "MuJoCo 上の Franka Panda が、変形体の布を 2 本指でつまんで運ぶ(把持は物理任せ)", fill=DIM, font=font(30))
     return img
 
 
@@ -142,8 +148,8 @@ def slide_system() -> Image.Image:
         ("背景差分で検出", "布の色に依らない"),
         ("番号読み取り", "1 文字 CNN + 分割"),
         ("計画", "確信度 0.6 以上は置き場、未満は要確認"),
-        ("pick & place", "Panda を IK で制御"),
-        ("検証", "退避後に再撮影し照合"),
+        ("pick & place", "2 本指で布をつまむ(物理)"),
+        ("検証", "退避後に置き場を再撮影"),
     ]
     bw, gap, top = 262, 44, y + 30
     x = 80
@@ -162,7 +168,7 @@ def slide_system() -> Image.Image:
     arrow(d, 624, y3 + 60, 726)
     arrow(d, 726, y3 + 110, 624)
     arrow(d, 1194, y3 + 85, 1296)
-    d.text((160, y3 + 200), "物理: MuJoCo 3(Apache-2.0)。アーム: mujoco_menagerie の Franka Panda + 吸着ツール。把持は吸着の模擬(接触で固定)",
+    d.text((160, y3 + 200), "物理: MuJoCo 3(Apache-2.0)。布は変形体(flex、厚さ 3 mm、フェルト程度)。アーム: menagerie の Franka Panda + ゴムパッド付き 2 本指",
            fill=DIM, font=font(26))
     d.text((160, y3 + 240), "実機化はロボット側(sim)の RobotArm 実装を 1 つ差し替えるだけ。AI 側と記録は変更なし",
            fill=DIM, font=font(26))
@@ -198,7 +204,7 @@ def slide_results(summary: dict, log: list[dict]) -> Image.Image:
         ("正しく読めた", f"{summary['read_correct']} / {summary['pieces']}", OK),
         ("置き場へ", f"{summary['placed_slot']}", OK),
         ("うち検証 OK", f"{summary['placed_slot_verified']}", OK),
-        ("要確認へ", f"{summary['review']}", WARN),
+        ("要確認へ", f"{summary['review'] + summary.get('grasp_failed', 0)}", WARN),
         ("誤配置", f"{summary['wrong_slot']}", RED if summary["wrong_slot"] else OK),
     ]
     x = 80
@@ -212,20 +218,37 @@ def slide_results(summary: dict, log: list[dict]) -> Image.Image:
         d.text((x + (280 - tw) / 2, y + 130), label, fill=DIM, font=f_lab)
         x += 300
     y2 = y + 240
-    d.text((80, y2), "要確認トレイに回った布片", fill=FG, font=font(34, bold=True))
+    d.text((80, y2), "要確認トレイに回った布片と、つかみ損ねの再試行", fill=FG, font=font(34, bold=True))
     rows = []
     for rec in log:
-        if rec.get("event") == "record" and rec.get("dest") == "review":
-            truth, read, conf = rec["truth"], rec["label"], rec["confidence"]
+        # dora 版のログは event=record、単一プロセス版は event=place。確信度は理由の文字列からも拾う
+        if rec.get("event") not in ("record", "place"):
+            continue
+        truth, read = rec.get("truth"), rec.get("label")
+        conf = rec.get("confidence")
+        if conf is None:
+            m = re.search(r"\(([0-9.]+)\)", rec.get("reason", ""))
+            conf = float(m.group(1)) if m else 0.0
+        if rec.get("phase") == "failed":
+            why = "搬送中に落下" if rec.get("lost_in_transit") else f"つかめず(再試行 {rec.get('grip_retries', 0)} 回)"
+            rows.append(f"正解 {truth} → {why}。人が拾う")
+        elif rec.get("dest") == "review":
             if truth == read:
                 rows.append(f"正解 {truth} → 読み {read}(正しいが確信度 {conf:.2f} で低い)")
             else:
                 rows.append(f"正解 {truth} → 読み {read}(読み違い、確信度 {conf:.2f})")
-    bullets(d, rows, 90, y2 + 60, 1760, size=32)
-    d.text((80, 880), "読み違えた布片はすべて要確認へ回り、誤った置き場には 1 枚も置かれなかった",
-           fill=ACCENT, font=font(34, bold=True))
-    d.text((80, 935), f"シミュレーション時間 {summary['sim_seconds']:.0f} 秒(等速、MuJoCo)。dora の 3 ノードでも単一プロセスでも同じ判断",
-           fill=DIM, font=font(26))
+        if rec.get("grip_retries", 0) and rec.get("phase") == "done":
+            rows.append(f"正解 {truth}: つかみ損ねて撮り直し、{rec['grip_retries']} 回目の再試行で回収")
+    if not rows:
+        rows.append("なし")
+    bullets(d, rows, 90, y2 + 60, 1760, size=30, gap=10)
+    d.text((80, 885), "読み違えた布片はすべて要確認へ回り、誤った置き場には 1 枚も置かれなかった",
+           fill=ACCENT, font=font(32, bold=True))
+    d.text((80, 935), f"シミュレーション時間 {summary['sim_seconds']:.0f} 秒(MuJoCo、変形体の布)。把持の失敗 {summary.get('grasp_failed', 0)} 枚、再試行 {summary.get('grasp_retries', 0)} 回。"
+           f"検証は置き場に布があるかをカメラで確認",
+           fill=DIM, font=font(24))
+    d.text((80, 970), "同じ seed・同じコードの dora 版では搬送中に 4 枚落とした。把持の成否は物理の微小な差で変わる",
+           fill=DIM, font=font(24))
     return img
 
 
@@ -236,14 +259,15 @@ def slide_next() -> Image.Image:
     bullets(d, [
         "迷ったら止めずに人へ回す設計。誤配置ゼロを最優先にした",
         "置いた後に読み直す自己検証。判断とその根拠を JSONL に残し、再学習の種にできる",
-        "ロボット側と AI 側を dora で分離。2D 版 → MuJoCo 版の載せ替えも RobotArm 1 クラスの差し替えで済んだ",
-        "アームの到達範囲を MuJoCo の IK で実測し、作業台のレイアウトを決めた",
-    ], 90, y + 60, 880, size=30)
+        "ロボット側と AI 側を dora で分離。2D → 剛体 + 吸着 → 変形体 + 2 本指の載せ替えは RobotArm 1 クラスの差し替え",
+        "平らな布を平行グリッパでつまむため、片方の指に 2.5 mm の唇を付け、閉じる間は押さえ指を世界に対して止める動きにした",
+        "つかみ損ねたら撮り直して再試行、搬送中に落としたら失敗として人へ。把持の成否を物理が決める",
+    ], 90, y + 60, 880, size=28)
     d.text((1000, y), "次の一歩", fill=WARN, font=font(36, bold=True))
     bullets(d, [
+        "置き方: 布は折れたまま落ちるので、平らに並べる工程(敷く動き、治具、人手)を足す",
         "SO-101 など LeRobot 対応アームで RobotArm を実装し、実機で同じ dataflow を動かす",
-        "吸着の模擬を、吸着ハンドの実機か布の変形を含む接触モデルで置き換える",
-    ], 1010, y + 60, 840, size=30)
+    ], 1010, y + 60, 840, size=28)
     d.text((80, 900), "コード: github.com/katsuhisa91/pai-final-cloth-sort(Apache-2.0)", fill=FG, font=font(32, bold=True))
     return img
 
@@ -253,12 +277,23 @@ def slide_next() -> Image.Image:
 def compose_frame(src: Image.Image) -> Image.Image:
     if src.size == (W, H):
         # MuJoCo 版のフレームは 1920x1080 で、タイトル・3D 視点・俯瞰カメラ・パネルを含む。そのまま使う
-        return src.convert("RGB")
+        img = src.convert("RGB")
+        if SPEED > 1:
+            d = ImageDraw.Draw(img)
+            # フレーム左上の「実時間 / real-time」表示を上書きして矛盾をなくす
+            d.rectangle([126, 52, 560, 78], fill=BG)
+            d.text((130, 54), f"{SPEED} 倍速再生(録画は等速)  MuJoCo(変形体の布 + 2 本指)", fill=DIM, font=font(17))
+            label = f"{SPEED} 倍速"
+            f = font(36, bold=True)
+            tw = d.textlength(label, font=f)
+            d.rectangle([W - tw - 70, 16, W - 20, 70], fill=(200, 60, 40))
+            d.text((W - tw - 45, 22), label, fill=(255, 255, 255), font=f)
+        return img
     img, d = new_canvas()
     scaled = src.convert("RGB").resize((W, int(src.height * W / src.width)), Image.LANCZOS)
     top = 100
     img.paste(scaled, (0, top))
-    d.text((60, 24), "実行の様子(等速)  dora-rs の 3 ノード sim / brain / recorder を実際に動かして録画",
+    d.text((60, 24), "実行の様子  同じ部品を dora-rs の 3 ノード(sim / brain / recorder)でも実行できる",
            fill=FG, font=font(34, bold=True))
     yb = top + scaled.height + 22
     f = font(28)
@@ -278,13 +313,15 @@ def main() -> None:
     ap.add_argument("--metrics", default="models/metrics.json")
     ap.add_argument("--fig", default="runs/mj4/top_detect.png")
     ap.add_argument("--seed", type=int, default=4)
+    ap.add_argument("--run-speed", type=int, default=1, help="実行部分の倍速(2 なら 2 倍速。スライドと画面に明記する)")
     ap.add_argument("--out", default=f"runs/submission/PAI最終課題_{ACCOUNT}.mp4")
     ap.add_argument("--slides-dir", default="runs/submission/slides")
     args = ap.parse_args()
 
-    global SEED
+    global SEED, SPEED
     SEED = args.seed
-    frames = sorted(Path(args.frames).glob("*.png"))
+    SPEED = args.run_speed
+    frames = sorted(Path(args.frames).glob("*.png"))[::max(1, args.run_speed)]
     if not frames:
         raise SystemExit(f"フレームがありません: {args.frames}(先に ./run_dora.sh を実行)")
     summary = json.loads(Path(args.summary).read_text())

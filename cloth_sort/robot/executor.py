@@ -98,42 +98,70 @@ class PickPlace:
     _dwell: float = 0.0
     grip_retries: int = 0
     max_grip_retries: int = 2
+    lost_in_transit: bool = False
+
+    def __post_init__(self) -> None:
+        # 2 本指版はつまむ点を布の縁に寄せる(アームが知っている)
+        g = getattr(self.arm, "grasp_point", None)
+        self.grasp_xy = g(self.pick_xy) if g else self.pick_xy
+        self.lower_z = float(getattr(self.arm, "place_z", 0.0))
 
     def step(self, dt: float) -> Phase:
         a = self.arm
         if self.phase is Phase.APPROACH:
-            if a.move_to(self.pick_xy, 1.0, dt):
+            if a.move_to(self.grasp_xy, 1.0, dt):
                 self.phase = Phase.DESCEND
         elif self.phase is Phase.DESCEND:
-            if a.move_to(self.pick_xy, 0.0, dt):
+            if a.move_to(self.grasp_xy, 0.0, dt):
                 self.phase = Phase.GRIP
                 self._dwell = 0.0
         elif self.phase is Phase.GRIP:
-            self._dwell += dt
-            if self._dwell >= self.arm_dwell():
-                if a.grip():
-                    self.phase = Phase.LIFT
-                elif self.grip_retries < self.max_grip_retries:
-                    self.grip_retries += 1
-                    a.release(None)
-                    self.phase = Phase.APPROACH
-                else:
-                    self.phase = Phase.FAILED
+            if hasattr(a, "grip_step"):
+                ok = a.grip_step(dt)          # 複数周期にまたがる(None = 進行中)
+                if ok is None:
+                    return self.phase
+            else:
+                self._dwell += dt
+                if self._dwell < self.arm_dwell():
+                    return self.phase
+                ok = a.grip()
+            if ok:
+                self.phase = Phase.LIFT
+            else:
+                self._retry_or_fail()
         elif self.phase is Phase.LIFT:
-            if a.move_to(self.pick_xy, 1.0, dt):
-                self.phase = Phase.CARRY
+            if a.move_to(self.grasp_xy, 1.0, dt):
+                if hasattr(a, "holding") and not a.holding(strict=True):
+                    self._retry_or_fail()        # 持ち上げたら抜けていた、または浅い把持(搬送中に抜ける)
+                else:
+                    self.phase = Phase.CARRY
         elif self.phase is Phase.CARRY:
-            if a.move_to(self.place_xy, 1.0, dt):
+            if hasattr(a, "holding") and not a.holding():
+                self.lost_in_transit = True          # 搬送中に落とした。布は途中に残るので失敗として人に回す
+                a.release(None)
+                self.phase = Phase.FAILED
+            elif a.move_to(self.place_xy, 1.0, dt):
                 self.phase = Phase.LOWER
         elif self.phase is Phase.LOWER:
-            if a.move_to(self.place_xy, 0.0, dt):
+            if a.move_to(self.place_xy, self.lower_z, dt):
+                if hasattr(a, "holding") and not a.holding():
+                    # 搬送中に落とした。布は途中に残っているので、再試行せず失敗として人に回す
+                    self.lost_in_transit = True
+                    a.release(None)
+                    self.phase = Phase.FAILED
+                    return self.phase
                 self.phase = Phase.RELEASE
                 self._dwell = 0.0
         elif self.phase is Phase.RELEASE:
-            self._dwell += dt
-            if self._dwell >= self.arm_dwell():
+            if hasattr(a, "release_step"):
+                if a.release_step(dt, self.place_name) is None:
+                    return self.phase
+            else:
+                self._dwell += dt
+                if self._dwell < self.arm_dwell():
+                    return self.phase
                 a.release(self.place_name)
-                self.phase = Phase.RETREAT
+            self.phase = Phase.RETREAT
         elif self.phase is Phase.RETREAT:
             if a.move_to(self.place_xy, 1.0, dt):
                 # 退避位置を持つアーム(MuJoCo 版)はカメラの視野外へ下がってから完了にする。
@@ -143,6 +171,20 @@ class PickPlace:
             if a.park(dt):   # type: ignore[attr-defined]
                 self.phase = Phase.DONE
         return self.phase
+
+    def _retry_or_fail(self) -> None:
+        if self.grip_retries < self.max_grip_retries:
+            self.grip_retries += 1
+            self.arm.release(None)
+            relocate = getattr(self.arm, "relocate", None)
+            if relocate:
+                # つかみ損ねで布が動いていることがあるので、撮り直して位置を取り直す
+                self.pick_xy = relocate(self.pick_xy)
+                self.grasp_xy = self.arm.grasp_point(self.pick_xy)   # type: ignore[attr-defined]
+            self.phase = Phase.APPROACH
+        else:
+            self.arm.release(None)
+            self.phase = Phase.FAILED
 
     def arm_dwell(self) -> float:
         limits = getattr(self.arm, "limits", None)

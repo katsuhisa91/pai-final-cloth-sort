@@ -35,6 +35,7 @@ BACKEND = os.environ.get("BACKEND", "2d")          # "2d" or "mujoco"
 def main() -> None:
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
     world, arm = make_world_and_arm(BACKEND, N_PIECES, SEED)
+    world.background = None
     park = arm.park if hasattr(arm, "park") else (lambda dt: arm.move_to(HOME, 1.0, dt))
     ov = Overlay(total=N_PIECES, speed_note="dora-rs 分散実行" + ("  MuJoCo" if BACKEND == "mujoco" else ""))
     node = Node()
@@ -50,7 +51,9 @@ def main() -> None:
             if event["id"] == "capture_request":
                 req = arrow_to_json(event["value"])
                 if req.get("background"):
-                    arr, meta = image_to_arrow(world.render_camera(include_pieces=False))
+                    bg = world.render_camera(include_pieces=False)
+                    world.background = bg          # 2 本指版の再試行(撮り直し)で使う
+                    arr, meta = image_to_arrow(bg)
                     node.send_output("background", arr, metadata=meta)
                 else:
                     arr, meta = image_to_arrow(world.render_camera())
@@ -77,12 +80,18 @@ def main() -> None:
                         node.send_output("result", json_to_arrow({
                             **current_task, "phase": phase.value,
                             "truth": piece.label if piece else None,
+                            "grip_retries": current.grip_retries, "lost_in_transit": current.lost_in_transit,
                         }))
-                        if current_task["dest"] == "slot":
+                        if phase.value == "failed":
+                            ov.review += 1
+                            why = "搬送中に落下" if current.lost_in_transit else f"つかめず(再試行 {current.grip_retries} 回)"
+                            ov.log.append(f"#{current_task['index']} 番号 {current_task['label'] or '?'} → {why}。要確認")
+                        elif current_task["dest"] == "slot":
                             ov.done += 1
+                            ov.log.append(f"#{current_task['index']} 番号 {current_task['label'] or '?'} → {ov.current_dest}")
                         else:
                             ov.review += 1
-                        ov.log.append(f"#{current_task['index']} 番号 {current_task['label'] or '?'} → {ov.current_dest}")
+                            ov.log.append(f"#{current_task['index']} 番号 {current_task['label'] or '?'} → {ov.current_dest}")
                         current = None
                 elif ticks_after_finish >= 0:
                     park(DT)

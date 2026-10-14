@@ -4,9 +4,9 @@ nodes:
   - id: sim
     path: cloth_sort/nodes/sim_node.py
     env:
-      BACKEND: "mujoco"          # "2d" にすると自前の 2D シミュレータで動く
+      BACKEND: "cloth"           # "cloth": 変形体の布 + 2 本指 / "mujoco": 剛体 + 吸着 / "2d": 自前の 2D
       SEED: "4"
-      N_PIECES: "12"
+      N_PIECES: "8"
       DT: "0.05"
       FRAME_DIR: "runs/dora/frames"
     inputs:

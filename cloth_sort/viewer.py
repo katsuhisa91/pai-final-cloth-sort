@@ -124,8 +124,22 @@ def _render_frame_mujoco(world, ov: Overlay) -> Image.Image:
     vx, vy, vw, vh = MJ_VIEW
     frame.paste(world.render_3d(vw, vh), (vx, vy))
     d.rectangle([vx - 1, vy - 1, vx + vw, vy + vh], outline=(80, 80, 90), width=1)
-    d.text((vx, vy + vh + 8), "MuJoCo: Franka Panda + 吸着ツール(物理シミュレーション、等速)", fill=DIM,
-           font=fonts.ui_font(16))
+    if hasattr(world, "render_hand"):
+        d.text((vx, vy + vh + 8), "MuJoCo: Franka Panda + 2 本指ハンド(ゴムパッド)、布は変形体(flex)。物理シミュレーション",
+               fill=DIM, font=fonts.ui_font(16))
+        hand = world.render_hand(560, 280)
+        hx, hy = vx, vy + vh + 36
+        frame.paste(hand, (hx, hy))
+        d.rectangle([hx - 1, hy - 1, hx + hand.width, hy + hand.height], outline=(80, 80, 90), width=1)
+        d.text((hx + hand.width + 16, hy), "ハンド追従カメラ", fill=DIM, font=fonts.ui_font(16))
+        d.text((hx + hand.width + 16, hy + 26), "左指のゴムパッド(2.5 mm 長い唇)で布の縁を押して", fill=DIM, font=fonts.ui_font(15))
+        d.text((hx + hand.width + 16, hy + 48), "折り目を作り、右指との間でつまむ。持ち上げ・搬送は", fill=DIM, font=fonts.ui_font(15))
+        d.text((hx + hand.width + 16, hy + 70), "抜けないよう 3〜6 cm/s。置き場の上で放して落とす。", fill=DIM, font=fonts.ui_font(15))
+        d.text((hx + hand.width + 16, hy + 100), "つかみ損ねたら撮り直して最大 2 回まで再試行。", fill=DIM, font=fonts.ui_font(15))
+        d.text((hx + hand.width + 16, hy + 122), "それでも駄目なら要確認へ(人が拾う)。", fill=DIM, font=fonts.ui_font(15))
+    else:
+        d.text((vx, vy + vh + 8), "MuJoCo: Franka Panda + 吸着ツール(物理シミュレーション、等速)", fill=DIM,
+               font=fonts.ui_font(16))
 
     tx, ty, tw, th = MJ_TOP
     top = Image.fromarray(world.render_camera(noise=False)).resize((tw, th), Image.LANCZOS)
@@ -137,6 +151,6 @@ def _render_frame_mujoco(world, ov: Overlay) -> Image.Image:
     px, py, pw, ph = MJ_PANEL
     _draw_panel(d, ov, px, py + 20, pw, ph - 20, log_lines=14)
     d.text((MARGIN, MJ_H - 30),
-           "カメラ → 検出 → 番号読み取り(CNN) → 計画 → アーム制御(IK)  /  dora-rs dataflow(sim / brain / recorder)",
+           "カメラ → 検出 → 番号読み取り(CNN) → 計画 → アーム制御(IK) → 把持(物理)  /  dora-rs dataflow(sim / brain / recorder)",
            fill=DIM, font=fonts.ui_font(15))
     return frame
