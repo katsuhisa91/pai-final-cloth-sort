@@ -8,3 +8,11 @@ out/
 .DS_Store
 runs/mj1/
 runs/cloth3/
+data/
+runs/train/
+runs/eval/*/frames/
+.venv-il/
+runs/eval/*/*.mp4
+runs/eval/*/worker_*.log
+runs/eval/recheck_*/
+runs/eval/fig_*/

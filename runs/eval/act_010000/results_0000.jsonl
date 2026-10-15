@@ -1,0 +1,2 @@
+{"seed": 20000, "policy": {"success": false, "steps": 318, "sim_seconds": 15.9, "closed": true, "timed_out": false, "cloth_xy": [189, 426], "wall_seconds": 108}, "n_pieces": 2, "place": "review"}
+{"seed": 20001, "policy": {"success": false, "steps": 538, "sim_seconds": 26.9, "closed": true, "timed_out": false, "cloth_xy": [255, 292], "wall_seconds": 108}, "n_pieces": 1, "place": "13"}

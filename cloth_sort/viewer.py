@@ -48,6 +48,25 @@ class Overlay:
     detections: list[tuple[tuple[int, int, int, int], str, float]] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
     speed_note: str = ""
+    hand_notes: list[str] | None = None      # 手首カメラの横の説明(None なら手続き的な把持の説明)
+
+
+SCRIPTED_HAND_NOTES = [
+    "左指のゴムパッド(2.5 mm 長い唇)で布の縁を押して",
+    "折り目を作り、右指との間でつまむ。持ち上げ・搬送は",
+    "抜けないよう 3〜5 cm/s。置き場の上で放して落とす。",
+    "",
+    "つかみ損ねたら撮り直して最大 2 回まで再試行。",
+    "それでも駄目なら要確認へ(人が拾う)。",
+]
+POLICY_HAND_NOTES = [
+    "アームの動きは模倣学習した方策(LeRobot の ACT)の出力。",
+    "入力は俯瞰カメラ + 手首カメラ + 手先位置 + 目標、",
+    "出力は手先の目標位置と指の指令(20 Hz)。",
+    "",
+    "教師は手続き的な把持。IK と位置サーボだけが共通で、",
+    "つまむ・運ぶ・放すの手順は方策が決める。",
+]
 
 
 def _draw_detections(d: ImageDraw.ImageDraw, ov: Overlay, ox: int, oy: int, scale: float = 1.0) -> None:
@@ -131,12 +150,12 @@ def _render_frame_mujoco(world, ov: Overlay) -> Image.Image:
         hx, hy = vx, vy + vh + 36
         frame.paste(hand, (hx, hy))
         d.rectangle([hx - 1, hy - 1, hx + hand.width, hy + hand.height], outline=(80, 80, 90), width=1)
-        d.text((hx + hand.width + 16, hy), "手首カメラ(ハンドに固定。可視化用で、AI は右上の俯瞰カメラだけを使う)", fill=DIM, font=fonts.ui_font(16))
-        d.text((hx + hand.width + 16, hy + 26), "左指のゴムパッド(2.5 mm 長い唇)で布の縁を押して", fill=DIM, font=fonts.ui_font(15))
-        d.text((hx + hand.width + 16, hy + 48), "折り目を作り、右指との間でつまむ。持ち上げ・搬送は", fill=DIM, font=fonts.ui_font(15))
-        d.text((hx + hand.width + 16, hy + 70), "抜けないよう 3〜5 cm/s。置き場の上で放して落とす。", fill=DIM, font=fonts.ui_font(15))
-        d.text((hx + hand.width + 16, hy + 100), "つかみ損ねたら撮り直して最大 2 回まで再試行。", fill=DIM, font=fonts.ui_font(15))
-        d.text((hx + hand.width + 16, hy + 122), "それでも駄目なら要確認へ(人が拾う)。", fill=DIM, font=fonts.ui_font(15))
+        notes = ov.hand_notes if ov.hand_notes is not None else SCRIPTED_HAND_NOTES
+        head = ("手首カメラ(ハンドに固定。方策の入力の 1 つ)" if ov.hand_notes is not None
+                else "手首カメラ(ハンドに固定。可視化用で、AI は右上の俯瞰カメラだけを使う)")
+        d.text((hx + hand.width + 16, hy), head, fill=DIM, font=fonts.ui_font(16))
+        for i, line in enumerate(notes):
+            d.text((hx + hand.width + 16, hy + 26 + 22 * i), line, fill=DIM, font=fonts.ui_font(15))
     else:
         d.text((vx, vy + vh + 8), "MuJoCo: Franka Panda + 吸着ツール(物理シミュレーション、等速)", fill=DIM,
                font=fonts.ui_font(16))

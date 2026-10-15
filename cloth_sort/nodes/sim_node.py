@@ -20,24 +20,28 @@ from dora import Node
 
 from cloth_sort import config
 from cloth_sort.nodes.common import image_to_arrow, json_to_arrow, arrow_to_json
-from cloth_sort.pipeline import HOME, PHASE_JA, make_world_and_arm
+from cloth_sort.pipeline import HOME, PHASE_JA, failure_reason, make_pick_place, make_world_and_arm
 from cloth_sort.robot.executor import PickPlace
-from cloth_sort.viewer import Overlay, render_frame
+from cloth_sort.viewer import POLICY_HAND_NOTES, Overlay, render_frame
 
 SEED = int(os.environ.get("SEED", "1"))
 N_PIECES = int(os.environ.get("N_PIECES", "12"))
 DT = float(os.environ.get("DT", "0.05"))
 FRAME_DIR = Path(os.environ.get("FRAME_DIR", "runs/dora/frames"))
 FRAME_EVERY = int(os.environ.get("FRAME_EVERY", "2"))
-BACKEND = os.environ.get("BACKEND", "2d")          # "2d" or "mujoco"
+BACKEND = os.environ.get("BACKEND", "2d")          # "2d" / "mujoco" / "cloth"
+ARM = os.environ.get("ARM", "scripted")            # "scripted": 手続き的な把持 / "policy": 学習した方策(ACT、cloth のみ)
+POLICY_PATH = os.environ.get("POLICY_PATH") or None
 
 
 def main() -> None:
     FRAME_DIR.mkdir(parents=True, exist_ok=True)
-    world, arm = make_world_and_arm(BACKEND, N_PIECES, SEED)
+    world, arm = make_world_and_arm(BACKEND, N_PIECES, SEED, ARM, POLICY_PATH)
     world.background = None
     park = arm.park if hasattr(arm, "park") else (lambda dt: arm.move_to(HOME, 1.0, dt))
-    ov = Overlay(total=N_PIECES, speed_note="dora-rs 分散実行" + ("  MuJoCo" if BACKEND == "mujoco" else ""))
+    ov = Overlay(total=N_PIECES, speed_note="dora-rs 分散実行" + ("  MuJoCo" if BACKEND != "2d" else "")
+                 + ("  アームは学習方策(ACT)" if ARM == "policy" else ""),
+                 hand_notes=POLICY_HAND_NOTES if ARM == "policy" else None)
     node = Node()
     current: PickPlace | None = None
     current_task: dict | None = None
@@ -68,7 +72,7 @@ def main() -> None:
                 ov.reason = current_task["reason"]
                 ov.status = f"{current_task['index']}/{current_task['total']} 枚目を搬送中"
                 place_name = current_task["label"] if current_task["dest"] == "slot" else "review"
-                current = PickPlace(arm, tuple(current_task["pick_xy"]), tuple(current_task["place_xy"]), place_name)
+                current = make_pick_place(arm, tuple(current_task["pick_xy"]), tuple(current_task["place_xy"]), place_name)
             elif event["id"] == "tick":
                 tick += 1
                 if current is not None:
@@ -84,7 +88,7 @@ def main() -> None:
                         }))
                         if phase.value == "failed":
                             ov.review += 1
-                            why = "搬送中に落下" if current.lost_in_transit else f"つかめず(再試行 {current.grip_retries} 回)"
+                            why = failure_reason(current)
                             ov.log.append(f"#{current_task['index']} 番号 {current_task['label'] or '?'} → {why}。要確認")
                         elif current_task["dest"] == "slot":
                             ov.done += 1

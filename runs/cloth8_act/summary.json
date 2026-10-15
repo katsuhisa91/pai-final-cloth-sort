@@ -1,0 +1,13 @@
+{
+  "pieces": 8,
+  "detected": 8,
+  "read_correct": 7,
+  "placed_slot": 6,
+  "placed_slot_verified": 6,
+  "verify_uncertain": 0,
+  "review": 0,
+  "wrong_slot": 0,
+  "grasp_failed": 2,
+  "grasp_retries": 0,
+  "sim_seconds": 201.7
+}

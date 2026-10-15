@@ -1,0 +1,3 @@
+# 模倣学習(ACT)用。基本の requirements.txt に LeRobot を足したもの。別の venv(.venv-il)に入れる
+-r requirements.txt
+lerobot[dataset,training]==0.6.1

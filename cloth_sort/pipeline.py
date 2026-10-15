@@ -3,6 +3,8 @@
 dora 版(cloth_sort/nodes)と同じ部品を使う。こちらは決定的に動くので、テストと動画作成に使う。
 使い方:  python -m cloth_sort.pipeline --seed 1 --n 12 --out runs/seed1 --video            # 2D 版
          python -m cloth_sort.pipeline --backend mujoco --seed 1 --n 12 --out runs/mj1 --video  # MuJoCo 版
+         python -m cloth_sort.pipeline --backend cloth --arm policy --policy runs/train/act/checkpoints/020000/pretrained_model \
+             --seed 4 --n 8 --out runs/cloth8_act --video                                   # 学習した方策でアームを動かす
 """
 
 from __future__ import annotations
@@ -20,18 +22,21 @@ from cloth_sort.perception.reader import LabelReader
 from cloth_sort.planning.planner import Destination, Observation, Planner, Task
 from cloth_sort.robot.executor import Phase, PickPlace, VirtualArm
 from cloth_sort.sim.world import World
-from cloth_sort.viewer import Overlay, render_frame
+from cloth_sort.viewer import POLICY_HAND_NOTES, Overlay, render_frame
 
 PHASE_JA = {
     Phase.APPROACH: "布片の上へ移動", Phase.DESCEND: "降下", Phase.GRIP: "把持", Phase.LIFT: "持ち上げ",
     Phase.CARRY: "置き場へ搬送", Phase.LOWER: "降下", Phase.RELEASE: "リリース", Phase.RETREAT: "退避",
-    Phase.PARK: "視野外へ退避", Phase.DONE: "完了", Phase.FAILED: "失敗",
+    Phase.PARK: "視野外へ退避", Phase.POLICY: "学習方策(ACT)で実行中", Phase.DONE: "完了", Phase.FAILED: "失敗",
 }
 HOME = (config.ARM_BASE[0], config.ARM_BASE[1] - 40)
 
 
-def make_world_and_arm(backend: str, n_pieces: int, seed: int):
-    """backend に応じて世界とアームを作る。"2d" は自前の 2D シミュレータ、"mujoco" は MuJoCo + Panda。"""
+def make_world_and_arm(backend: str, n_pieces: int, seed: int, arm: str = "scripted", policy: Path | str | None = None):
+    """backend に応じて世界とアームを作る。"2d" は自前の 2D シミュレータ、"mujoco" は MuJoCo + Panda。
+
+    arm="policy" は学習した方策(LeRobot の ACT)で 1 枚ぶんの動きを決める(cloth のみ。policy は学習済みモデルのパス)。
+    """
     if backend == "mujoco":
         from cloth_sort.sim.mujoco_world import MujocoArm, MujocoWorld
         world = MujocoWorld.random_scene(n_pieces, seed)
@@ -41,7 +46,14 @@ def make_world_and_arm(backend: str, n_pieces: int, seed: int):
         from cloth_sort.sim.mujoco_cloth_world import GripperArm, MujocoClothWorld
         world = MujocoClothWorld.random_scene(n_pieces, seed)
         world.step(0.4)                       # 布が机に落ち着くまで
+        if arm == "policy":
+            from cloth_sort.learning.policy_arm import ACTController, LearnedArm
+            if policy is None:
+                raise ValueError("arm=policy には学習済みモデルのパス(--policy)が要ります")
+            return world, LearnedArm(world, ACTController(policy))
         return world, GripperArm(world)
+    if arm == "policy":
+        raise ValueError("学習した方策は --backend cloth でだけ使えます")
     world = World.random_scene(n_pieces, seed)
     return world, VirtualArm(world)
 
@@ -70,13 +82,16 @@ class FrameWriter:
 
 
 def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None, dt: float = 0.05,
-        frame_every: int = 2, min_confidence: float = 0.6, backend: str = "2d") -> dict:
-    world, arm = make_world_and_arm(backend, n_pieces, seed)
+        frame_every: int = 2, min_confidence: float = 0.6, backend: str = "2d", arm_kind: str = "scripted",
+        policy: Path | None = None) -> dict:
+    world, arm = make_world_and_arm(backend, n_pieces, seed, arm_kind, policy)
     reader = LabelReader(weights) if weights else LabelReader()
     reader.min_confidence = min_confidence
     planner = Planner(min_confidence)
     notes = {"mujoco": "  MuJoCo", "cloth": "  MuJoCo(変形体の布 + 2 本指)"}
-    ov = Overlay(total=n_pieces, speed_note="実時間 / real-time" + notes.get(backend, ""))
+    ov = Overlay(total=n_pieces, speed_note="実時間 / real-time" + notes.get(backend, "")
+                 + ("  アームは学習方策(ACT)" if arm_kind == "policy" else ""),
+                 hand_notes=POLICY_HAND_NOTES if arm_kind == "policy" else None)
     fps = 1.0 / (dt * frame_every)
     frames = FrameWriter(out / "frames" if out else None, frame_every)
     records: list[dict] = []
@@ -122,7 +137,7 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
         ov.reason = task.reason
         ov.status = f"{i}/{len(tasks)} 枚目を搬送中"
         place_name = task.label if task.destination is Destination.SLOT else "review"
-        pp = PickPlace(arm, task.pick_xy, task.place_xy, place_name)
+        pp = make_pick_place(arm, task.pick_xy, task.place_xy, place_name)
         while not pp.finished:
             phase = pp.step(dt)
             world.time_s += dt
@@ -138,7 +153,7 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
             ov.review += 1
             ov.log.append(f"#{i} → 要確認 ({task.reason})")
         elif pp.phase is Phase.FAILED:
-            why = "搬送中に落下" if pp.lost_in_transit else f"つかめず(再試行 {pp.grip_retries} 回)"
+            why = failure_reason(pp)
             ov.log.append(f"#{i} 番号 {task.label} → {why}。要確認")
             ov.review += 1
         else:
@@ -166,6 +181,23 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
         (out / "log.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n")
         (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
     return summary
+
+
+def make_pick_place(arm, pick_xy, place_xy, place_name: str):
+    """アームが自前の実行器(学習した方策)を持つならそれを、なければ手続き的な状態機械を使う。"""
+    if hasattr(arm, "pick_place"):
+        return arm.pick_place(pick_xy, place_xy, place_name)
+    return PickPlace(arm, pick_xy, place_xy, place_name)
+
+
+def failure_reason(pp) -> str:
+    if getattr(pp, "timed_out", False):
+        return "方策が時間内に置けず"
+    if pp.lost_in_transit:
+        return "搬送中に落下"
+    if getattr(pp, "max_grip_retries", 0) == 0:
+        return "方策がつかめず"
+    return f"つかめず(再試行 {pp.grip_retries} 回)"
 
 
 def _save_detection_image(image, ov: Overlay, path: Path) -> None:
@@ -251,8 +283,11 @@ def main() -> None:
     ap.add_argument("--dt", type=float, default=0.05)
     ap.add_argument("--frame-every", type=int, default=2)
     ap.add_argument("--backend", choices=["2d", "mujoco", "cloth"], default="2d")
+    ap.add_argument("--arm", choices=["scripted", "policy"], default="scripted",
+                    help="policy: 学習した方策(ACT)でアームを動かす(--backend cloth、--policy が必要)")
+    ap.add_argument("--policy", type=Path, default=None, help="学習済みモデル(pretrained_model ディレクトリ)")
     a = ap.parse_args()
-    s = run(a.seed, a.n, a.out, a.weights, a.dt, a.frame_every, backend=a.backend)
+    s = run(a.seed, a.n, a.out, a.weights, a.dt, a.frame_every, backend=a.backend, arm_kind=a.arm, policy=a.policy)
     print(json.dumps(s, ensure_ascii=False, indent=2))
     if a.video:
         make_video(a.out / "frames", a.out / "cloth_sort.mp4", 1.0 / (a.dt * a.frame_every))

@@ -5,6 +5,8 @@ nodes:
     path: cloth_sort/nodes/sim_node.py
     env:
       BACKEND: "cloth"           # "cloth": 変形体の布 + 2 本指 / "mujoco": 剛体 + 吸着 / "2d": 自前の 2D
+      ARM: "scripted"            # "scripted": 手続き的な把持 / "policy": 学習した方策(ACT。cloth のみ、.venv-il で実行)
+      POLICY_PATH: "runs/train/act/checkpoints/020000/pretrained_model"   # ARM=policy のときに読む学習済みモデル
       SEED: "4"
       N_PIECES: "8"
       DT: "0.05"

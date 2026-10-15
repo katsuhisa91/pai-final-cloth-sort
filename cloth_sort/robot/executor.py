@@ -41,6 +41,7 @@ class Phase(str, Enum):
     RELEASE = "release"       # 放す
     RETREAT = "retreat"       # 上空へ戻る
     PARK = "park"             # カメラの視野外へ退避(退避位置を持つアームのみ)
+    POLICY = "policy"         # 学習した方策が動かしている(つまむ → 運ぶ → 放す を方策が決める)
     DONE = "done"
     FAILED = "failed"
 
