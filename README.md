@@ -141,7 +141,22 @@ export PYTHONPATH=$PWD
 VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にしておく
 ```
 
-データセット(132 MB)と学習済みモデル(約 200 MB)はリポジトリに含めていません。上のコマンドで再現できます。
+データセット(135 MB)と学習済みモデル(約 200 MB)はリポジトリに含めていません。上のコマンドで再現できます。
+
+### Hugging Face に上げる場合
+
+再学習(1 時間半〜2 時間)なしで試せるように、モデルとデータセットを Hugging Face Hub に置く手順です(`hf auth login` 済みが前提)。
+
+```sh
+# モデル(学習済み ACT。config.json + safetensors + 前処理の定義)
+.venv-il/bin/hf upload katsuhisa91/pai-cloth-sort-act runs/train/act/checkpoints/020000/pretrained_model --private
+# データセット(LeRobot v3 形式。LeRobotDataset が読めるようバージョンタグも付く)
+.venv-il/bin/python -c "from lerobot.datasets.lerobot_dataset import LeRobotDataset; \
+  LeRobotDataset('katsuhisa91/cloth_pickplace', root='data/cloth_pickplace').push_to_hub(private=True)"
+```
+
+上げたあとは `--policy katsuhisa91/pai-cloth-sort-act`、`--dataset.repo_id=katsuhisa91/cloth_pickplace`(`--dataset.root` なし)で参照できます。
+提出時に public にする場合は `--private` を外すか、Hub の設定で公開にします。
 
 ### 公開されているロボットデータとの関係
 
