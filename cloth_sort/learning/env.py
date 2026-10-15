@@ -30,6 +30,8 @@ IMG_W, IMG_H = 256, 128
 FPS = 20
 DT = 1.0 / FPS
 STATE_NAMES = ["tip_x", "tip_y", "tip_z", "finger", "goal_pick_x", "goal_pick_y", "goal_place_x", "goal_place_y"]
+# "relative": 目標と手先の差(目標 − 手先)も足した 12 次元。置く位置のずれを減らす狙い(方策は差を 0 にすればよい)
+STATE_NAMES_RELATIVE = STATE_NAMES + ["pick_dx", "pick_dy", "place_dx", "place_dy"]
 ACTION_NAMES = ["cmd_x", "cmd_y", "cmd_z", "grip"]
 TASK = "numbered cloth piece: pick it up by the edge and drop it on the target"
 PLACE_TOL_MM = 50.0        # 置き場の半ピッチ。この範囲に布の重心があれば「置けた」
@@ -53,13 +55,16 @@ class Observation:
     state: np.ndarray        # (8,) float32
 
 
-def make_layout(seed: int) -> tuple[World, EpisodeSpec]:
+REVIEW_SHARE = 0.30     # 要確認トレイ行きの割合。最初の 160 エピソードは 0.15 で集めた(トレイ行きが弱かったので増やした)
+
+
+def make_layout(seed: int, review_share: float = REVIEW_SHARE) -> tuple[World, EpisodeSpec]:
     """布 1〜3 枚の場面。1 枚目が運ぶ対象。残りは仕分け途中の盤面を模して、半分は置き場に置いておく。"""
     rng = np.random.default_rng(seed)
     n = int(rng.choice([1, 2, 3], p=[0.4, 0.4, 0.2]))
     layout = World.random_scene(n, seed)
     slots = config.board_slots()
-    if rng.random() < 0.85:
+    if rng.random() < 1.0 - review_share:      # 0.15 のとき最初の収集・評価と同じ場面になる
         s = slots[int(rng.integers(len(slots)))]
         place_xy, name = s.center, s.label
     else:
@@ -88,8 +93,8 @@ class PickPlaceEnv:
         self._renderers: dict[str, mujoco.Renderer] = {}
 
     # ---------- 場面 ----------
-    def reset(self, seed: int) -> EpisodeSpec:
-        layout, spec = make_layout(seed)
+    def reset(self, seed: int, review_share: float = REVIEW_SHARE) -> EpisodeSpec:
+        layout, spec = make_layout(seed, review_share)
         self.world = MujocoClothWorld.from_layout(layout)
         self.attach(self.world, spec)
         self.start_from_park()
@@ -127,10 +132,13 @@ class PickPlaceEnv:
     def goal_vector(self) -> np.ndarray:
         return np.array([*mm_to_world(self.spec.pick_xy), *mm_to_world(self.spec.place_xy)], dtype=np.float32)
 
+    state_mode: str = "basic"          # "basic"(8 次元)か "relative"(12 次元)。読み込んだ方策に合わせる
+
     def state(self) -> np.ndarray:
         tip = self.world.tip_pos
         finger = float(self.world.data.qpos[NQ])
-        return np.array([tip[0], tip[1], tip[2], finger, *self.goal_vector()], dtype=np.float32)
+        basic = np.array([tip[0], tip[1], tip[2], finger, *self.goal_vector()], dtype=np.float32)
+        return with_relative_goal(basic) if self.state_mode == "relative" else basic
 
     def observe(self) -> Observation:
         return Observation(self._render("top"), self._render("wristcam"), self.state())
@@ -169,6 +177,14 @@ class PickPlaceEnv:
         self.world.gripper_closed = False
 
 
+def with_relative_goal(basic: np.ndarray) -> np.ndarray:
+    """8 次元の状態に(目標 − 手先)の xy を足して 12 次元にする。記録済みのデータにも後から適用できる。"""
+    basic = np.asarray(basic, dtype=np.float32)
+    tip = basic[..., 0:2]
+    rel = np.concatenate([basic[..., 4:6] - tip, basic[..., 6:8] - tip], axis=-1)
+    return np.concatenate([basic, rel], axis=-1).astype(np.float32)
+
+
 @dataclass
 class Trajectory:
     spec: EpisodeSpec
@@ -186,12 +202,27 @@ class Trajectory:
         return len(self.action)
 
 
-def run_expert(env: PickPlaceEnv, record: bool = True, images: bool = True, on_step=None) -> Trajectory:
-    """手続き的な把持で 1 エピソード回し、(観測, 行動) を記録する。images=False なら描画せず状態と行動だけ残す。"""
+NOISE_PHASES = {Phase.APPROACH, Phase.CARRY, Phase.RETREAT}     # 精度が要らない工程だけ外乱を入れる
+
+
+def run_expert(env: PickPlaceEnv, record: bool = True, images: bool = True, on_step=None,
+               noise_m: float = 0.0, noise_seed: int = 0) -> Trajectory:
+    """手続き的な把持で 1 エピソード回し、(観測, 行動) を記録する。images=False なら描画せず状態と行動だけ残す。
+
+    noise_m > 0 なら DART 方式: 接近・搬送・退避の間、実際に動かす手先目標に外乱(標準偏差 noise_m [m]、
+    低域通過)を足し、記録する行動は教師のきれいな指令のまま。方策が少しずれた状態からの戻り方を学べる。
+    """
     spec = env.spec
     pp = PickPlace(env.arm, spec.pick_xy, spec.place_xy, spec.place_name)
     tr = Trajectory(spec)
+    rng = np.random.default_rng(noise_seed)
+    noise = np.zeros(3)
+    env.arm.cmd_offset = np.zeros(3)
     while True:
+        if noise_m > 0:
+            target = rng.normal(0.0, noise_m, 3) if pp.phase in NOISE_PHASES else np.zeros(3)
+            noise = 0.9 * noise + 0.1 * target                 # ゆっくり変わる外乱
+            env.arm.cmd_offset = noise
         if record:
             if images:
                 o = env.observe()
@@ -210,6 +241,7 @@ def run_expert(env: PickPlaceEnv, record: bool = True, images: bool = True, on_s
             on_step()
         if phase in (Phase.PARK, Phase.DONE, Phase.FAILED) or env.time_s > MAX_EPISODE_S:
             break
+    env.arm.cmd_offset = np.zeros(3)
     tr.grip_retries = pp.grip_retries
     tr.final_phase = phase.value
     tr.sim_seconds = env.time_s

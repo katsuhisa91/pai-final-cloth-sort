@@ -16,12 +16,14 @@ from pathlib import Path
 
 import numpy as np
 
-from cloth_sort.learning.env import DT, MAX_EPISODE_S, TASK, PickPlaceEnv, run_expert
-from cloth_sort.learning.policy_arm import GRIP_CLOSED, SETTLE_S, ACTController, episode_done
+from cloth_sort.learning.env import DT, MAX_EPISODE_S, PickPlaceEnv, run_expert
+from cloth_sort.learning.policy_arm import ACTController, LearnedArm
+from cloth_sort.robot.executor import Phase
 from cloth_sort.pipeline import make_video
 from cloth_sort.viewer import POLICY_HAND_NOTES, Overlay, render_frame
 
 EVAL_SEED_BASE = 20_000
+EVAL_REVIEW_SHARE = 0.15      # 評価の場面は最初の分布(要確認トレイ行き 15%)で固定し、学習データの配分を変えても比較できるようにする
 
 
 class _Frames:
@@ -41,37 +43,37 @@ class _Frames:
         self.n += 1
 
 
-def run_policy_episode(env: PickPlaceEnv, ctrl: ACTController, frames: _Frames, ov: Overlay) -> dict:
-    ctrl.reset()
-    closed = False
-    steps = 0
+def run_policy_episode(env: PickPlaceEnv, ctrl: ACTController, frames: _Frames, ov: Overlay, retries: int = 0) -> dict:
+    """パイプラインと同じ実行器(PolicyPickPlace)で 1 枚運ぶ。retries > 0 なら、つかみ損ねの撮り直し再試行も含めて評価する。"""
     t0 = time.time()
-    while env.time_s <= MAX_EPISODE_S:
-        o = env.observe()
-        a = ctrl.act(o.top, o.wrist, o.state, TASK)
-        env.apply(a, DT)
+    world = env.world
+    if getattr(world, "background", None) is None:
+        world.background = world.render_camera(include_pieces=False)     # 再試行の撮り直し(背景差分)に使う
+    arm = LearnedArm(world, ctrl)
+    spec = env.spec
+    pp = arm.pick_place(spec.pick_xy, spec.place_xy, spec.place_name)
+    pp.max_grip_retries = retries
+    steps = 0
+    limit = MAX_EPISODE_S * (retries + 1) + 10.0
+    while not pp.finished and world.time_s <= limit:
+        pp.step(DT)
+        world.time_s += DT
         steps += 1
-        env.world.time_s = env.time_s
-        frames.maybe(env.world, ov)
-        if a[3] <= GRIP_CLOSED:
-            closed = True
-        if episode_done(closed, float(a[3]), env.world.tip_pos, env.goal_vector()[2:4], steps):
-            for _ in range(int(SETTLE_S / DT)):          # 布が落ち切るまで待ってから判定する
-                env.apply(a, DT)
-                env.world.time_s = env.time_s
-                frames.maybe(env.world, ov)
-            break
+        frames.maybe(world, ov)
+    env.time_s = world.time_s
     x, y, z = env.cloth_centroid_mm()
-    return {"success": bool(env.placed()), "steps": steps, "sim_seconds": round(env.time_s, 1),
-            "closed": closed, "timed_out": env.time_s > MAX_EPISODE_S,
+    return {"success": pp.phase is Phase.DONE and bool(env.placed()), "steps": steps, "sim_seconds": round(world.time_s, 1),
+            "closed": pp.closed_once, "timed_out": pp.timed_out or world.time_s > limit, "grip_retries": pp.grip_retries,
             "cloth_xy": [round(x), round(y)], "wall_seconds": round(time.time() - t0)}
 
 
 def run_expert_episode(env: PickPlaceEnv, frames: _Frames, ov: Overlay) -> dict:
     t0 = time.time()
     tr = run_expert(env, record=False, on_step=lambda: frames.maybe(env.world, ov))
+    x, y, _ = env.cloth_centroid_mm()
     return {"success": tr.success, "steps": len(tr.phases), "sim_seconds": round(tr.sim_seconds, 1),
-            "grip_retries": tr.grip_retries, "final_phase": tr.final_phase, "wall_seconds": round(time.time() - t0)}
+            "grip_retries": tr.grip_retries, "final_phase": tr.final_phase, "cloth_xy": [round(x), round(y)],
+            "wall_seconds": round(time.time() - t0)}
 
 
 def main() -> None:
@@ -83,6 +85,7 @@ def main() -> None:
     ap.add_argument("--skip-expert", action="store_true")
     ap.add_argument("--device", default=None)
     ap.add_argument("--start", type=int, default=0, help="評価シードの開始番号(並列に分けて回すとき用)")
+    ap.add_argument("--retries", type=int, default=0, help="方策のつかみ損ねを撮り直して再試行する回数(パイプラインは 2)")
     ap.add_argument("--summarize", action="store_true", help="--out にある results_*.jsonl をまとめる")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
@@ -96,7 +99,7 @@ def main() -> None:
         seed = EVAL_SEED_BASE + i
         row = {"seed": seed}
         for who in (["policy"] if a.skip_expert else ["policy", "expert"]):
-            spec = env.reset(seed)
+            spec = env.reset(seed, review_share=EVAL_REVIEW_SHARE)
             env.world.time_s = 0.0
             ov = Overlay(total=1, speed_note=f"評価 seed {seed}  " + ("学習方策(ACT)" if who == "policy" else "手続き的な把持"),
                          hand_notes=POLICY_HAND_NOTES if who == "policy" else None)
@@ -104,7 +107,7 @@ def main() -> None:
             ov.current_dest = f"置き場 {spec.place_name}" if spec.place_name != "review" else "要確認トレイ"
             ov.phase = "学習方策(ACT)で実行中" if who == "policy" else "手続き(状態機械)"
             frames = _Frames(a.out / "frames" / f"{seed}_{who}" if a.video else None)
-            row[who] = run_policy_episode(env, ctrl, frames, ov) if who == "policy" else run_expert_episode(env, frames, ov)
+            row[who] = run_policy_episode(env, ctrl, frames, ov, a.retries) if who == "policy" else run_expert_episode(env, frames, ov)
             row["n_pieces"] = spec.n_pieces
             row["place"] = spec.place_name
             if a.video and frames.n:
@@ -125,6 +128,7 @@ def summarize(out: Path, policy: str) -> dict:
         "episodes": len(rows),
         "policy_success": sum(r["policy"]["success"] for r in rows),
         "policy_timed_out": sum(r["policy"]["timed_out"] for r in rows),
+        "policy_retries": sum(r["policy"].get("grip_retries", 0) for r in rows),
         "policy_mean_sim_s": round(float(np.mean([r["policy"]["sim_seconds"] for r in rows])), 1) if rows else None,
         "expert_episodes": len(with_expert),
         "expert_success": sum(r["expert"]["success"] for r in with_expert),

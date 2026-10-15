@@ -281,6 +281,7 @@ class GripperArm:
         self.dwell_s = 0.0
         self.place_z = PLACE_Z
         self.park_q = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
+        self.cmd_offset = np.zeros(3)       # 実際に IK へ渡す目標に足す外乱(模倣学習のデータ収集で使う。通常は 0)
 
     @property
     def limits(self):
@@ -341,7 +342,7 @@ class GripperArm:
         return False
 
     def _servo(self, dt: float) -> None:
-        q = self._ik(self._cmd)
+        q = self._ik(self._cmd + self.cmd_offset)
         self.world.data.ctrl[:NQ] = q
         self.world.step(dt)
 

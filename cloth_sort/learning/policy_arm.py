@@ -56,6 +56,8 @@ class ACTController:
             cfg, pretrained_path=path,
             preprocessor_overrides={"device_processor": {"device": device}})
         self.device = device
+        self.state_dim = int(cfg.input_features["observation.state"].shape[0])
+        self.state_mode = "relative" if self.state_dim == 12 else "basic"
         self.reset()
 
     def reset(self) -> None:
@@ -105,10 +107,17 @@ class LearnedArm:
         return PolicyPickPlace(self, pick_xy, place_xy, place_name)
 
 
-class PolicyPickPlace:
-    """1 枚ぶんを方策で実行する。退避位置から始め(必要なら先に退避)、放して上がったら退避して完了。"""
+RETRY_RADIUS_MM = 150.0   # つかみ損ねた布がこの範囲に残っていれば撮り直して再試行(手続き版の relocate と同じ発想)
 
-    max_grip_retries = 0
+
+class PolicyPickPlace:
+    """1 枚ぶんを方策で実行する。退避位置から始め(必要なら先に退避)、放して上がったら退避して完了。
+
+    置けていなければ、布が元の位置の近くに残っている限り最大 max_grip_retries 回まで撮り直して再試行する
+    (手続き版と同じ上位の立て直し。方策そのものは変えない)。
+    """
+
+    max_grip_retries = 2
 
     def __init__(self, arm: LearnedArm, pick_xy, place_xy, place_name: str) -> None:
         self.arm = arm
@@ -117,20 +126,24 @@ class PolicyPickPlace:
         self.place_name = place_name
         self.grip_retries = 0
         self.lost_in_transit = False
-        self.steps = 0
-        self.closed_once = False
         self.timed_out = False
-        self._settle = 0.0
-        self._last_action = None
         self.env = PickPlaceEnv()
         target = arm.world.piece_at(self.pick_xy, tol_mm=45)
-        target_id = target.id if target else 0
-        spec = EpisodeSpec(0, len(arm.world.pieces), target_id, self.pick_xy, self.place_xy, place_name)
-        self.env.attach(arm.world, spec, arm.inner)
+        self.target_id = target.id if target else 0
+        self._attach()
         near_park = bool(np.all(np.abs(arm.world.data.qpos[:7] - arm.inner.park_q) < 0.05))
         self.phase = Phase.POLICY if near_park else Phase.PARK
         self._pre_park = not near_park
-        arm.controller.reset()
+
+    def _attach(self) -> None:
+        spec = EpisodeSpec(0, len(self.arm.world.pieces), self.target_id, self.pick_xy, self.place_xy, self.place_name)
+        self.env.attach(self.arm.world, spec, self.arm.inner)
+        self.env.state_mode = getattr(self.arm.controller, "state_mode", "basic")
+        self.steps = 0
+        self.closed_once = False
+        self._settle = 0.0
+        self._last_action = None
+        self.arm.controller.reset()
 
     @property
     def finished(self) -> bool:
@@ -162,17 +175,29 @@ class PolicyPickPlace:
                 self._fail()
             return self.phase
         if self.phase is Phase.RELEASE:
-            self.env.apply(self._last_action, dt)
+            a = np.array(self._last_action, dtype=np.float32)
+            a[3] = 1.0                          # 指は全開にする(時間方向の平均で開きが 7 割で止まり、布を挟んだままになることがあった)
+            self.env.apply(a, dt)
             self._settle += dt
             if self._settle >= SETTLE_S:
                 if self.env.placed():
                     self.env.mark_placed()
                     self.phase = Phase.PARK
                 else:
-                    self._fail()
+                    self._retry_or_fail()
         return self.phase
 
-    def _fail(self) -> None:
+    def _retry_or_fail(self) -> None:
+        """置けていない。布が元の位置の近くにあれば撮り直して再試行、遠くに落ちていれば失敗(人が拾う)。"""
         self.arm.inner.release(None)
+        if self.grip_retries < self.max_grip_retries and not self.timed_out:
+            x, y, z = self.env.cloth_centroid_mm()
+            if z < 0.02 and ((x - self.pick_xy[0]) ** 2 + (y - self.pick_xy[1]) ** 2) ** 0.5 <= RETRY_RADIUS_MM:
+                self.grip_retries += 1
+                self.pick_xy = self.arm.inner.relocate(self.pick_xy) if getattr(self.arm.world, "background", None) is not None else (x, y)
+                self._attach()
+                self.phase = Phase.PARK           # 退避位置に戻ってから、方策をもう一度最初から回す
+                self._pre_park = True
+                return
         self.lost_in_transit = self.closed_once
         self.phase = Phase.FAILED
