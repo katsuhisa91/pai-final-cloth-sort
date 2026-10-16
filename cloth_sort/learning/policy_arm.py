@@ -175,7 +175,7 @@ class PolicyPickPlace:
                 self.arm.inner._cmd[:] = a[:3]       # 以後の放す動作(振り落としを含む)は手続き版の release_step に任せる
             elif self.steps * dt > MAX_EPISODE_S:
                 self.timed_out = True
-                self._fail()
+                self._retry_or_fail()
             return self.phase
         if self.phase is Phase.RELEASE:
             # 放す動作そのものは手続き版と共通: 全開にして落ち着くまで待ち、布が指に引っかかっていれば横に振って落とす

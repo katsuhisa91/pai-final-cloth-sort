@@ -1,0 +1,3 @@
+usage: teacher_variants.py [-h] [--variant VARIANT] --seeds SEEDS [SEEDS ...]
+                           --out OUT
+teacher_variants.py: error: argument --seeds: invalid int value: '30000 30001 30002 30003 30004 30005 30006 30007 30008 30009 30010 30011 30012 30013 30014 30015 '
