@@ -89,8 +89,8 @@ def main() -> None:
     ap.add_argument("--device", default=None)
     ap.add_argument("--seed-base", type=int, default=EVAL_SEED_BASE, help="評価シードの起点(補正量の測定には別の起点を使う)")
     ap.add_argument("--place-bias", type=float, default=None, help="置く点の補正量 [mm](既定は policy_arm.PLACE_BIAS_MM)")
-    ap.add_argument("--ensemble", type=float, default=ACTController.ENSEMBLE_COEFF,
-                    help="時間方向の平均の係数(負なら新しい予測を重く。ACT の既定は 0.01)。0 なら平均せず 100 ステップぶんをそのまま実行する")
+    ap.add_argument("--ensemble", type=float, default=0.0,
+                    help="時間方向の平均の係数(ACT の既定は 0.01、負なら新しい予測を重く)。0(既定)なら平均せず 100 ステップぶんをそのまま実行する")
     ap.add_argument("--start", type=int, default=0, help="評価シードの開始番号(並列に分けて回すとき用)")
     ap.add_argument("--retries", type=int, default=0, help="方策のつかみ損ねを撮り直して再試行する回数(パイプラインは 2)")
     ap.add_argument("--summarize", action="store_true", help="--out にある results_*.jsonl をまとめる")

@@ -1,0 +1,12 @@
+{
+  "episodes": 20,
+  "policy_episodes": 20,
+  "policy_success": 7,
+  "policy_timed_out": 11,
+  "policy_retries": 0,
+  "policy_mean_sim_s": 35.4,
+  "expert_episodes": 0,
+  "expert_success": 0,
+  "both_success": 0,
+  "policy": "runs/train/act_v2/checkpoints/040000/pretrained_model"
+}

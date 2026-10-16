@@ -33,7 +33,10 @@ def episode_done(closed_once: bool, grip: float, tip_xyz, place_xyz, steps: int)
 class ACTController:
     """学習済み ACT を読み込み、観測 → 行動(手先目標 xyz + 指)を返す。毎周期推論し、時間方向にアンサンブルする。"""
 
-    ENSEMBLE_COEFF = -0.05    # 時間方向の平均は新しい予測を重く(ACT 既定 0.01 は古い予測を重くし、止まる位置が遅れた)
+    # 時間方向の平均(temporal ensembling)は使わない: 100 ステップ(5 秒)ぶんの予測をそのまま実行し、5 秒ごとに観測し直す。
+    # 毎周期の平均(ACT 既定 0.01、新しい予測を重くする −0.05 も)は、絶対位置の指令を平均するせいで手先が
+    # 1〜2 mm/周期しか進まない「這う」状態に入り、長い搬送で時間切れになった。評価 19/20 はこの開ループ実行で出た値
+    ENSEMBLE_COEFF = None
 
     def __init__(self, path: str | Path, device: str | None = None, ensemble_coeff: float | None = ENSEMBLE_COEFF) -> None:
         import torch
@@ -158,9 +161,22 @@ class PolicyPickPlace:
         self.env.state_mode = getattr(self.arm.controller, "state_mode", "basic")
         self.steps = 0
         self.closed_once = False
+        self.lifted_once = False
         self._settle = 0.0
         self._last_action = None
         self.arm.controller.reset()
+
+    def _released_near_place(self) -> bool | None:
+        """布が指から離れて机に載ったか(持ち上げた後に接触が無くなり、布が低い)。None = まだ離れていない。
+        True = 置く点の近く、False = 途中で落とした。方策の指の指令が中途半端でも、物理の事実で終わりを決める。"""
+        if not (self.closed_once and self.lifted_once):
+            return None
+        world = self.arm.world
+        v = world.cloth_vertices(self.target_id)
+        if world.rubber_contacts(self.target_id) > 0 or float(v[:, 2].mean()) >= 0.02:
+            return None
+        x, y, _ = self.env.cloth_centroid_mm()
+        return ((x - self.place_xy[0]) ** 2 + (y - self.place_xy[1]) ** 2) ** 0.5 <= 1.5 * NEAR_PLACE_M * 1000.0
 
     @property
     def finished(self) -> bool:
@@ -185,9 +201,14 @@ class PolicyPickPlace:
             if grip <= GRIP_CLOSED:
                 self.closed_once = True
             self._last_action = a
-            if episode_done(self.closed_once, grip, self.arm.world.tip_pos, self.env.goal_vector()[2:4], self.steps):
-                self.phase = Phase.RELEASE           # 開いた。布が落ち切るまで待ってから判定する
+            if self.closed_once and float(self.arm.world.cloth_vertices(self.target_id)[:, 2].mean()) > 0.03:
+                self.lifted_once = True
+            released = self._released_near_place()
+            if episode_done(self.closed_once, grip, self.arm.world.tip_pos, self.env.goal_vector()[2:4], self.steps) or released:
+                self.phase = Phase.RELEASE           # 開いた(または布が離れた)。全開にして布が落ち切るまで待ち、判定する
                 self.arm.inner._cmd[:] = a[:3]       # 以後の放す動作(振り落としを含む)は手続き版の release_step に任せる
+            elif released is False:
+                self._retry_or_fail()                # 途中で落とした
             elif self.steps * dt > MAX_EPISODE_S:
                 self.timed_out = True
                 self._retry_or_fail()
