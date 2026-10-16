@@ -46,6 +46,7 @@ class EpisodeSpec:
     pick_xy: tuple[float, float]
     place_xy: tuple[float, float]
     place_name: str
+    goal_place_xy: tuple[float, float] | None = None    # 方策に渡す置く点(系統誤差の補正後)。None なら place_xy
 
 
 @dataclass
@@ -130,7 +131,8 @@ class PickPlaceEnv:
         return r.render().copy()
 
     def goal_vector(self) -> np.ndarray:
-        return np.array([*mm_to_world(self.spec.pick_xy), *mm_to_world(self.spec.place_xy)], dtype=np.float32)
+        place = self.spec.goal_place_xy if self.spec.goal_place_xy is not None else self.spec.place_xy
+        return np.array([*mm_to_world(self.spec.pick_xy), *mm_to_world(place)], dtype=np.float32)
 
     state_mode: str = "basic"          # "basic"(8 次元)か "relative"(12 次元)。読み込んだ方策に合わせる
 

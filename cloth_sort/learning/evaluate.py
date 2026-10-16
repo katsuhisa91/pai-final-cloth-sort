@@ -43,13 +43,14 @@ class _Frames:
         self.n += 1
 
 
-def run_policy_episode(env: PickPlaceEnv, ctrl: ACTController, frames: _Frames, ov: Overlay, retries: int = 0) -> dict:
+def run_policy_episode(env: PickPlaceEnv, ctrl: ACTController, frames: _Frames, ov: Overlay, retries: int = 0,
+                       place_bias_mm: float | None = None) -> dict:
     """パイプラインと同じ実行器(PolicyPickPlace)で 1 枚運ぶ。retries > 0 なら、つかみ損ねの撮り直し再試行も含めて評価する。"""
     t0 = time.time()
     world = env.world
     if getattr(world, "background", None) is None:
         world.background = world.render_camera(include_pieces=False)     # 再試行の撮り直し(背景差分)に使う
-    arm = LearnedArm(world, ctrl)
+    arm = LearnedArm(world, ctrl, place_bias_mm)
     spec = env.spec
     pp = arm.pick_place(spec.pick_xy, spec.place_xy, spec.place_name)
     pp.max_grip_retries = retries
@@ -63,6 +64,7 @@ def run_policy_episode(env: PickPlaceEnv, ctrl: ACTController, frames: _Frames, 
     env.time_s = world.time_s
     x, y, z = env.cloth_centroid_mm()
     return {"success": pp.phase is Phase.DONE and bool(env.placed()), "steps": steps, "sim_seconds": round(world.time_s, 1),
+            "pick_xy": [round(spec.pick_xy[0]), round(spec.pick_xy[1])], "place_xy": [round(spec.place_xy[0]), round(spec.place_xy[1])],
             "closed": pp.closed_once, "timed_out": pp.timed_out or world.time_s > limit, "grip_retries": pp.grip_retries,
             "cloth_xy": [round(x), round(y)], "wall_seconds": round(time.time() - t0)}
 
@@ -85,8 +87,10 @@ def main() -> None:
     ap.add_argument("--skip-expert", action="store_true")
     ap.add_argument("--skip-policy", action="store_true", help="教師だけを回す(--policy は読み込まない)")
     ap.add_argument("--device", default=None)
-    ap.add_argument("--ensemble", type=float, default=0.01,
-                    help="時間方向の平均の係数(ACT の既定 0.01)。0 以下なら平均せず 100 ステップぶんをそのまま実行する")
+    ap.add_argument("--seed-base", type=int, default=EVAL_SEED_BASE, help="評価シードの起点(補正量の測定には別の起点を使う)")
+    ap.add_argument("--place-bias", type=float, default=None, help="置く点の補正量 [mm](既定は policy_arm.PLACE_BIAS_MM)")
+    ap.add_argument("--ensemble", type=float, default=ACTController.ENSEMBLE_COEFF,
+                    help="時間方向の平均の係数(負なら新しい予測を重く。ACT の既定は 0.01)。0 なら平均せず 100 ステップぶんをそのまま実行する")
     ap.add_argument("--start", type=int, default=0, help="評価シードの開始番号(並列に分けて回すとき用)")
     ap.add_argument("--retries", type=int, default=0, help="方策のつかみ損ねを撮り直して再試行する回数(パイプラインは 2)")
     ap.add_argument("--summarize", action="store_true", help="--out にある results_*.jsonl をまとめる")
@@ -95,12 +99,12 @@ def main() -> None:
     if a.summarize:
         print(json.dumps(summarize(a.out, str(a.policy)), ensure_ascii=False, indent=2))
         return
-    ctrl = None if a.skip_policy else ACTController(a.policy, device=a.device, ensemble_coeff=a.ensemble if a.ensemble > 0 else None)
+    ctrl = None if a.skip_policy else ACTController(a.policy, device=a.device, ensemble_coeff=a.ensemble if a.ensemble != 0 else None)
     env = PickPlaceEnv()
     results = []
     whos = [w for w, skip in (("policy", a.skip_policy), ("expert", a.skip_expert)) if not skip]
     for i in range(a.start, a.start + a.episodes):
-        seed = EVAL_SEED_BASE + i
+        seed = a.seed_base + i
         row = {"seed": seed}
         for who in whos:
             spec = env.reset(seed, review_share=EVAL_REVIEW_SHARE)
@@ -111,7 +115,8 @@ def main() -> None:
             ov.current_dest = f"置き場 {spec.place_name}" if spec.place_name != "review" else "要確認トレイ"
             ov.phase = "学習方策(ACT)で実行中" if who == "policy" else "手続き(状態機械)"
             frames = _Frames(a.out / "frames" / f"{seed}_{who}" if a.video else None)
-            row[who] = run_policy_episode(env, ctrl, frames, ov, a.retries) if who == "policy" else run_expert_episode(env, frames, ov)
+            row[who] = (run_policy_episode(env, ctrl, frames, ov, a.retries, a.place_bias) if who == "policy"
+                        else run_expert_episode(env, frames, ov))
             row["n_pieces"] = spec.n_pieces
             row["place"] = spec.place_name
             if a.video and frames.n:

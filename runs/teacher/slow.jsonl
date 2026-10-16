@@ -1,0 +1,16 @@
+{"variant": "slow", "seed": 30000, "n_pieces": 1, "place": "13", "success": false, "retries": 0, "final": "failed", "sim_s": 20.2, "wall_s": 72}
+{"variant": "slow", "seed": 30001, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 22.7, "wall_s": 80}
+{"variant": "slow", "seed": 30002, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 15.7, "wall_s": 56}
+{"variant": "slow", "seed": 30003, "n_pieces": 3, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 18.2, "wall_s": 173}
+{"variant": "slow", "seed": 30004, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 17.6, "wall_s": 65}
+{"variant": "slow", "seed": 30005, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 21.9, "wall_s": 85}
+{"variant": "slow", "seed": 30006, "n_pieces": 1, "place": "7", "success": true, "retries": 0, "final": "park", "sim_s": 21.6, "wall_s": 77}
+{"variant": "slow", "seed": 30007, "n_pieces": 2, "place": "19", "success": true, "retries": 0, "final": "park", "sim_s": 24.8, "wall_s": 152}
+{"variant": "slow", "seed": 30008, "n_pieces": 3, "place": "9", "success": true, "retries": 0, "final": "park", "sim_s": 23.4, "wall_s": 217}
+{"variant": "slow", "seed": 30009, "n_pieces": 1, "place": "16", "success": true, "retries": 0, "final": "park", "sim_s": 22.5, "wall_s": 94}
+{"variant": "slow", "seed": 30010, "n_pieces": 2, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 14.9, "wall_s": 80}
+{"variant": "slow", "seed": 30011, "n_pieces": 1, "place": "18", "success": true, "retries": 0, "final": "park", "sim_s": 23.5, "wall_s": 87}
+{"variant": "slow", "seed": 30012, "n_pieces": 2, "place": "review", "success": false, "retries": 0, "final": "park", "sim_s": 24.2, "wall_s": 189}
+{"variant": "slow", "seed": 30013, "n_pieces": 1, "place": "4", "success": true, "retries": 0, "final": "park", "sim_s": 23.5, "wall_s": 87}
+{"variant": "slow", "seed": 30014, "n_pieces": 3, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 16.3, "wall_s": 141}
+{"variant": "slow", "seed": 30015, "n_pieces": 2, "place": "3", "success": false, "retries": 0, "final": "failed", "sim_s": 26.9, "wall_s": 164}

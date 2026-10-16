@@ -33,7 +33,9 @@ def episode_done(closed_once: bool, grip: float, tip_xyz, place_xyz, steps: int)
 class ACTController:
     """学習済み ACT を読み込み、観測 → 行動(手先目標 xyz + 指)を返す。毎周期推論し、時間方向にアンサンブルする。"""
 
-    def __init__(self, path: str | Path, device: str | None = None, ensemble_coeff: float | None = 0.01) -> None:
+    ENSEMBLE_COEFF = -0.05    # 時間方向の平均は新しい予測を重く(ACT 既定 0.01 は古い予測を重くし、止まる位置が遅れた)
+
+    def __init__(self, path: str | Path, device: str | None = None, ensemble_coeff: float | None = ENSEMBLE_COEFF) -> None:
         import torch
         from lerobot.configs import PreTrainedConfig
         from lerobot.policies import make_pre_post_processors
@@ -83,10 +85,11 @@ class ACTController:
 class LearnedArm:
     """GripperArm を包み、1 枚ぶんの実行を方策に任せる。pose / park などは GripperArm に委譲する。"""
 
-    def __init__(self, world: MujocoClothWorld, controller: ACTController) -> None:
+    def __init__(self, world: MujocoClothWorld, controller: ACTController, place_bias_mm: float | None = None) -> None:
         self.world = world
         self.inner = GripperArm(world)
         self.controller = controller
+        self.place_bias_mm = PLACE_BIAS_MM if place_bias_mm is None else place_bias_mm
 
     @property
     def pose(self):
@@ -106,10 +109,20 @@ class LearnedArm:
         self.inner.release(placed_at)
 
     def pick_place(self, pick_xy, place_xy, place_name: str) -> "PolicyPickPlace":
-        return PolicyPickPlace(self, pick_xy, place_xy, place_name)
+        return PolicyPickPlace(self, pick_xy, place_xy, place_name, self.place_bias_mm)
 
 
 RETRY_RADIUS_MM = 150.0   # つかみ損ねた布がこの範囲に残っていれば撮り直して再試行(手続き版の relocate と同じ発想)
+PLACE_BIAS_MM = 22.0      # 方策が進行方向に止まり遅れる系統誤差の補正量 [mm]。評価とは別の 20 場面(seed 21000〜)で測った平均(sd 15)
+
+
+def corrected_place(pick_xy, place_xy, bias_mm: float) -> tuple[float, float]:
+    """置く点を、進行方向(つまむ点 → 置く点)の手前へ bias_mm だけずらす(キャリブレーション)。"""
+    dx, dy = place_xy[0] - pick_xy[0], place_xy[1] - pick_xy[1]
+    n = (dx * dx + dy * dy) ** 0.5
+    if bias_mm == 0.0 or n < 1e-6:
+        return tuple(place_xy)
+    return (place_xy[0] - bias_mm * dx / n, place_xy[1] - bias_mm * dy / n)
 
 
 class PolicyPickPlace:
@@ -121,11 +134,12 @@ class PolicyPickPlace:
 
     max_grip_retries = 2
 
-    def __init__(self, arm: LearnedArm, pick_xy, place_xy, place_name: str) -> None:
+    def __init__(self, arm: LearnedArm, pick_xy, place_xy, place_name: str, place_bias_mm: float | None = None) -> None:
         self.arm = arm
         self.pick_xy = tuple(pick_xy)
         self.place_xy = tuple(place_xy)
         self.place_name = place_name
+        self.place_bias_mm = PLACE_BIAS_MM if place_bias_mm is None else place_bias_mm
         self.grip_retries = 0
         self.lost_in_transit = False
         self.timed_out = False
@@ -138,7 +152,8 @@ class PolicyPickPlace:
         self._pre_park = not near_park
 
     def _attach(self) -> None:
-        spec = EpisodeSpec(0, len(self.arm.world.pieces), self.target_id, self.pick_xy, self.place_xy, self.place_name)
+        spec = EpisodeSpec(0, len(self.arm.world.pieces), self.target_id, self.pick_xy, self.place_xy, self.place_name,
+                           goal_place_xy=corrected_place(self.pick_xy, self.place_xy, self.place_bias_mm))
         self.env.attach(self.arm.world, spec, self.arm.inner)
         self.env.state_mode = getattr(self.arm.controller, "state_mode", "basic")
         self.steps = 0

@@ -52,8 +52,10 @@ def save_trajectory(path: Path, tr: Trajectory) -> None:
                         action=np.stack(tr.action), phases=np.array(tr.phases), meta=json.dumps(meta))
 
 
-def pack(staging: Path, out: Path, repo_id: str, state_mode: str = "basic") -> dict:
-    """成功したエピソードを LeRobotDataset に詰める(lerobot が必要)。state_mode="relative" で目標との差を足す。"""
+def pack(staging: Path | list[Path], out: Path, repo_id: str, state_mode: str = "basic") -> dict:
+    """成功したエピソードを LeRobotDataset に詰める(lerobot が必要)。state_mode="relative" で目標との差を足す。
+    staging は複数指定でき(通常の収集 + 外乱あり収集など)、順に詰める。"""
+    stagings = [staging] if isinstance(staging, Path) else list(staging)
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     names = STATE_NAMES_RELATIVE if state_mode == "relative" else STATE_NAMES
     features = {
@@ -67,7 +69,7 @@ def pack(staging: Path, out: Path, repo_id: str, state_mode: str = "basic") -> d
     ds = LeRobotDataset.create(repo_id, fps=FPS, features=features, root=out, robot_type="panda_sim_2finger",
                                use_videos=True, streaming_encoding=True, encoder_queue_maxsize=2000)   # PNG を経由せず動画に直接書く。待ち行列は 1 エピソードぶん以上(溢れるとフレームが落ちる)
     stats = {"files": 0, "success": 0, "frames": 0, "with_retry": 0, "failed": 0}
-    for path in sorted(staging.glob("ep_*.npz")):
+    for path in [f for d in stagings for f in sorted(d.glob("ep_*.npz"))]:
         if time.time() - path.stat().st_mtime < 120:
             stats["in_progress_skipped"] = stats.get("in_progress_skipped", 0) + 1   # 収集中のワーカーが書いている途中
             continue
@@ -101,7 +103,7 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--shard", type=int, default=None, help="内部用: ワーカーの番号")
     ap.add_argument("--n-shards", type=int, default=None)
-    ap.add_argument("--pack", type=Path, default=None, help="staging を LeRobotDataset に詰める")
+    ap.add_argument("--pack", type=Path, nargs="+", default=None, help="staging(複数可)を LeRobotDataset に詰める")
     ap.add_argument("--out", type=Path, default=Path("data/cloth_pickplace"))
     ap.add_argument("--repo-id", default="local/cloth_pickplace")
     ap.add_argument("--state", choices=["basic", "relative"], default="basic", help="relative: 目標と手先の差を状態に足す")

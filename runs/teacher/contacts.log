@@ -1,3 +1,16 @@
-usage: teacher_variants.py [-h] [--variant VARIANT] --seeds SEEDS [SEEDS ...]
-                           --out OUT
-teacher_variants.py: error: argument --seeds: invalid int value: '30000 30001 30002 30003 30004 30005 30006 30007 30008 30009 30010 30011 30012 30013 30014 30015 '
+{"variant": "contacts", "seed": 30000, "n_pieces": 1, "place": "13", "success": false, "retries": 0, "final": "failed", "sim_s": 20.0, "wall_s": 72}
+{"variant": "contacts", "seed": 30001, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 20.8, "wall_s": 70}
+{"variant": "contacts", "seed": 30002, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 14.3, "wall_s": 51}
+{"variant": "contacts", "seed": 30003, "n_pieces": 3, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 16.3, "wall_s": 164}
+{"variant": "contacts", "seed": 30004, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 15.8, "wall_s": 55}
+{"variant": "contacts", "seed": 30005, "n_pieces": 1, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 20.1, "wall_s": 78}
+{"variant": "contacts", "seed": 30006, "n_pieces": 1, "place": "7", "success": true, "retries": 0, "final": "park", "sim_s": 19.0, "wall_s": 69}
+{"variant": "contacts", "seed": 30007, "n_pieces": 2, "place": "19", "success": true, "retries": 0, "final": "park", "sim_s": 21.6, "wall_s": 137}
+{"variant": "contacts", "seed": 30008, "n_pieces": 3, "place": "9", "success": true, "retries": 0, "final": "park", "sim_s": 20.4, "wall_s": 231}
+{"variant": "contacts", "seed": 30009, "n_pieces": 1, "place": "16", "success": true, "retries": 0, "final": "park", "sim_s": 19.7, "wall_s": 81}
+{"variant": "contacts", "seed": 30010, "n_pieces": 2, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 13.6, "wall_s": 76}
+{"variant": "contacts", "seed": 30011, "n_pieces": 1, "place": "18", "success": true, "retries": 0, "final": "park", "sim_s": 20.6, "wall_s": 84}
+{"variant": "contacts", "seed": 30012, "n_pieces": 2, "place": "review", "success": false, "retries": 1, "final": "park", "sim_s": 26.9, "wall_s": 203}
+{"variant": "contacts", "seed": 30013, "n_pieces": 1, "place": "4", "success": true, "retries": 0, "final": "park", "sim_s": 20.5, "wall_s": 72}
+{"variant": "contacts", "seed": 30014, "n_pieces": 3, "place": "review", "success": true, "retries": 0, "final": "park", "sim_s": 14.8, "wall_s": 120}
+{"variant": "contacts", "seed": 30015, "n_pieces": 2, "place": "3", "success": true, "retries": 0, "final": "park", "sim_s": 24.5, "wall_s": 134}
