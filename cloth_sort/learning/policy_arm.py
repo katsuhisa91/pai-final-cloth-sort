@@ -31,7 +31,7 @@ def episode_done(closed_once: bool, grip: float, tip_xyz, place_xyz, steps: int)
 
 
 class ACTController:
-    """学習済み ACT を読み込み、観測 → 行動(手先目標 xyz + 指)を返す。毎周期推論し、時間方向にアンサンブルする。"""
+    """学習済み方策(ACT。SmolVLA など LeRobot の他の方策も同じ入出力なら可)を読み込み、観測 → 行動(手先目標 xyz + 指)を返す。"""
 
     # 時間方向の平均(temporal ensembling)は使わない: 100 ステップ(5 秒)ぶんの予測をそのまま実行し、5 秒ごとに観測し直す。
     # 毎周期の平均(ACT 既定 0.01、新しい予測を重くする −0.05 も)は、絶対位置の指令を平均するせいで手先が
@@ -41,8 +41,7 @@ class ACTController:
     def __init__(self, path: str | Path, device: str | None = None, ensemble_coeff: float | None = ENSEMBLE_COEFF) -> None:
         import torch
         from lerobot.configs import PreTrainedConfig
-        from lerobot.policies import make_pre_post_processors
-        from lerobot.policies.act.modeling_act import ACTPolicy
+        from lerobot.policies import get_policy_class, make_pre_post_processors
 
         self.torch = torch
         path = str(path)
@@ -50,13 +49,17 @@ class ACTController:
             device = "mps" if torch.backends.mps.is_available() else "cpu"
         cfg = PreTrainedConfig.from_pretrained(path)
         cfg.device = device
-        if ensemble_coeff is not None:
-            cfg.temporal_ensemble_coeff = ensemble_coeff
-            cfg.n_action_steps = 1
+        self.policy_type = cfg.type
+        if cfg.type == "act":
+            if ensemble_coeff is not None:
+                cfg.temporal_ensemble_coeff = ensemble_coeff
+                cfg.n_action_steps = 1
+            else:
+                cfg.temporal_ensemble_coeff = None       # 100 ステップぶんを予測してそのまま実行(5 秒ごとに観測し直す)
+                cfg.n_action_steps = cfg.chunk_size
         else:
-            cfg.temporal_ensemble_coeff = None       # 100 ステップぶんを予測してそのまま実行(5 秒ごとに観測し直す)
-            cfg.n_action_steps = cfg.chunk_size
-        self.policy = ACTPolicy.from_pretrained(path, config=cfg)
+            cfg.n_action_steps = cfg.chunk_size          # SmolVLA などもチャンクをそのまま実行する
+        self.policy = get_policy_class(cfg.type).from_pretrained(path, config=cfg)
         self.policy.to(device)
         self.policy.eval()
         self.pre, self.post = make_pre_post_processors(
