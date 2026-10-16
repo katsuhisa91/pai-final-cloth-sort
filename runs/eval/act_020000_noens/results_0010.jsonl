@@ -1,0 +1,3 @@
+{"seed": 20010, "policy": {"success": true, "steps": 403, "sim_seconds": 20.2, "closed": true, "timed_out": false, "grip_retries": 0, "cloth_xy": [695, 113], "wall_seconds": 207}, "n_pieces": 2, "place": "1"}
+{"seed": 20011, "policy": {"success": true, "steps": 517, "sim_seconds": 25.9, "closed": true, "timed_out": false, "grip_retries": 0, "cloth_xy": [731, 462], "wall_seconds": 126}, "n_pieces": 1, "place": "16"}
+{"seed": 20012, "policy": {"success": true, "steps": 353, "sim_seconds": 17.7, "closed": true, "timed_out": false, "grip_retries": 0, "cloth_xy": [726, 444], "wall_seconds": 75}, "n_pieces": 1, "place": "16"}

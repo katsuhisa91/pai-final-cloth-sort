@@ -1,0 +1,5 @@
+{"seed": 20010, "expert": {"success": false, "steps": 266, "sim_seconds": 13.3, "grip_retries": 0, "final_phase": "failed", "cloth_xy": [610, 190], "wall_seconds": 116}, "n_pieces": 2, "place": "1"}
+{"seed": 20011, "expert": {"success": false, "steps": 391, "sim_seconds": 19.6, "grip_retries": 0, "final_phase": "failed", "cloth_xy": [700, 431], "wall_seconds": 100}, "n_pieces": 1, "place": "16"}
+{"seed": 20012, "expert": {"success": true, "steps": 303, "sim_seconds": 15.2, "grip_retries": 0, "final_phase": "park", "cloth_xy": [700, 427], "wall_seconds": 75}, "n_pieces": 1, "place": "16"}
+{"seed": 20013, "expert": {"success": false, "steps": 339, "sim_seconds": 17.0, "grip_retries": 0, "final_phase": "failed", "cloth_xy": [687, 185], "wall_seconds": 196}, "n_pieces": 3, "place": "10"}
+{"seed": 20014, "expert": {"success": true, "steps": 446, "sim_seconds": 22.3, "grip_retries": 0, "final_phase": "park", "cloth_xy": [1103, 133], "wall_seconds": 268}, "n_pieces": 3, "place": "5"}

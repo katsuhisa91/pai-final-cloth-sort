@@ -20,7 +20,6 @@ GRIP_CLOSED = 0.3      # 指の指令がこれ以下なら「閉じた」
 GRIP_OPEN = 0.7        # これ以上なら「開いた」
 RETREAT_Z = 0.05       # 放したあと手先がこの高さまで上がったらエピソード終了
 NEAR_PLACE_M = 0.08    # 置く点からこの距離以内で開いたときだけ「置いた」とみなす(つかみ損ねて開き直すのと区別する)
-SETTLE_S = 1.0         # 開いてから布が落ち切るまで待つ時間(判定はその後)
 
 
 def episode_done(closed_once: bool, grip: float, tip_xyz, place_xyz, steps: int) -> bool:
@@ -49,6 +48,9 @@ class ACTController:
         if ensemble_coeff is not None:
             cfg.temporal_ensemble_coeff = ensemble_coeff
             cfg.n_action_steps = 1
+        else:
+            cfg.temporal_ensemble_coeff = None       # 100 ステップぶんを予測してそのまま実行(5 秒ごとに観測し直す)
+            cfg.n_action_steps = cfg.chunk_size
         self.policy = ACTPolicy.from_pretrained(path, config=cfg)
         self.policy.to(device)
         self.policy.eval()
@@ -170,21 +172,23 @@ class PolicyPickPlace:
             self._last_action = a
             if episode_done(self.closed_once, grip, self.arm.world.tip_pos, self.env.goal_vector()[2:4], self.steps):
                 self.phase = Phase.RELEASE           # 開いた。布が落ち切るまで待ってから判定する
+                self.arm.inner._cmd[:] = a[:3]       # 以後の放す動作(振り落としを含む)は手続き版の release_step に任せる
             elif self.steps * dt > MAX_EPISODE_S:
                 self.timed_out = True
                 self._fail()
             return self.phase
         if self.phase is Phase.RELEASE:
-            a = np.array(self._last_action, dtype=np.float32)
-            a[3] = 1.0                          # 指は全開にする(時間方向の平均で開きが 7 割で止まり、布を挟んだままになることがあった)
-            self.env.apply(a, dt)
-            self._settle += dt
-            if self._settle >= SETTLE_S:
-                if self.env.placed():
-                    self.env.mark_placed()
-                    self.phase = Phase.PARK
-                else:
-                    self._retry_or_fail()
+            # 放す動作そのものは手続き版と共通: 全開にして落ち着くまで待ち、布が指に引っかかっていれば横に振って落とす
+            inner = self.arm.inner
+            if inner.holding_id is None:
+                inner.holding_id = self.target_id
+            if inner.release_step(dt, None) is None:
+                return self.phase
+            if self.env.placed():
+                self.env.mark_placed()
+                self.phase = Phase.PARK
+            else:
+                self._retry_or_fail()
         return self.phase
 
     def _retry_or_fail(self) -> None:

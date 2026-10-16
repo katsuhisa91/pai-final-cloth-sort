@@ -1,0 +1,12 @@
+{
+  "episodes": 20,
+  "policy_episodes": 0,
+  "policy_success": 0,
+  "policy_timed_out": 0,
+  "policy_retries": 0,
+  "policy_mean_sim_s": null,
+  "expert_episodes": 20,
+  "expert_success": 12,
+  "both_success": 0,
+  "policy": "none"
+}

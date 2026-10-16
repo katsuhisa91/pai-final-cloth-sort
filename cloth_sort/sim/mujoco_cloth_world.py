@@ -42,6 +42,9 @@ CLOSE_T = 1.2
 SETTLE_T = 0.3
 RELEASE_T = 0.4
 DROP_T = 0.8
+SHAKE_T = 1.0                   # 開いても布が指に引っかかっているとき、横に 3 cm 振って戻す時間
+SHAKE_AMP = 0.03
+MAX_SHAKES = 2
 
 
 def _inline(path: Path) -> str:
@@ -278,6 +281,9 @@ class GripperArm:
         self.holding_id: int | None = None
         self._grip_t: float | None = None
         self._release_t: float | None = None
+        self._shake_t0: float | None = None
+        self._shakes = 0
+        self._resettle_until = 0.0
         self.dwell_s = 0.0
         self.place_z = PLACE_Z
         self.park_q = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
@@ -402,16 +408,39 @@ class GripperArm:
         self.holding_id = None
         self.world.held_piece = None
 
+    def cloth_hangs(self, piece_id: int | None = None) -> bool:
+        """開いたのに布が指に引っかかって宙にあるか(ゴムパッドとの接触が残り、布が机から浮いている)。"""
+        pid = self.holding_id if piece_id is None else piece_id
+        if pid is None:
+            return False
+        v = self.world.cloth_vertices(pid)
+        return float(v[:, 2].mean()) > 0.02 and self.world.rubber_contacts(pid) > 0
+
     def release_step(self, dt: float, placed_at: str | None) -> bool | None:
-        """指を開いて布を落とし、落ち着くまで待つ。"""
+        """指を開いて布を落とし、落ち着くまで待つ。布が指に引っかかって落ちなければ、横に振って落とす(最大 2 回)。"""
         d = self.world.data
         if self._release_t is None:
             self._release_t = 0.0
+            self._shake_t0 = None
+            self._shakes = 0
+            self._resettle_until = RELEASE_T + DROP_T
         self._release_t += dt
         t = self._release_t
         d.ctrl[NQ] = OPEN_CTRL * min(1.0, t / RELEASE_T)
+        if self._shake_t0 is None and t >= self._resettle_until and self._shakes < MAX_SHAKES and self.cloth_hangs():
+            self._shake_t0 = t
+            self._shake_x0 = float(self._cmd[0])
+            self._shakes += 1
+        if self._shake_t0 is not None:
+            f = (t - self._shake_t0) / SHAKE_T
+            if f < 1.0:
+                self._cmd[0] = self._shake_x0 + SHAKE_AMP * math.sin(2 * math.pi * f)
+            else:
+                self._cmd[0] = self._shake_x0
+                self._shake_t0 = None
+                self._resettle_until = t + DROP_T
         self._servo(dt)
-        if t < RELEASE_T + DROP_T:
+        if t < self._resettle_until or self._shake_t0 is not None:
             return None
         self._release_t = None
         self.world.gripper_closed = False

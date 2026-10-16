@@ -83,7 +83,10 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("runs/eval/act"))
     ap.add_argument("--video", action="store_true")
     ap.add_argument("--skip-expert", action="store_true")
+    ap.add_argument("--skip-policy", action="store_true", help="教師だけを回す(--policy は読み込まない)")
     ap.add_argument("--device", default=None)
+    ap.add_argument("--ensemble", type=float, default=0.01,
+                    help="時間方向の平均の係数(ACT の既定 0.01)。0 以下なら平均せず 100 ステップぶんをそのまま実行する")
     ap.add_argument("--start", type=int, default=0, help="評価シードの開始番号(並列に分けて回すとき用)")
     ap.add_argument("--retries", type=int, default=0, help="方策のつかみ損ねを撮り直して再試行する回数(パイプラインは 2)")
     ap.add_argument("--summarize", action="store_true", help="--out にある results_*.jsonl をまとめる")
@@ -92,13 +95,14 @@ def main() -> None:
     if a.summarize:
         print(json.dumps(summarize(a.out, str(a.policy)), ensure_ascii=False, indent=2))
         return
-    ctrl = ACTController(a.policy, device=a.device)
+    ctrl = None if a.skip_policy else ACTController(a.policy, device=a.device, ensemble_coeff=a.ensemble if a.ensemble > 0 else None)
     env = PickPlaceEnv()
     results = []
+    whos = [w for w, skip in (("policy", a.skip_policy), ("expert", a.skip_expert)) if not skip]
     for i in range(a.start, a.start + a.episodes):
         seed = EVAL_SEED_BASE + i
         row = {"seed": seed}
-        for who in (["policy"] if a.skip_expert else ["policy", "expert"]):
+        for who in whos:
             spec = env.reset(seed, review_share=EVAL_REVIEW_SHARE)
             env.world.time_s = 0.0
             ov = Overlay(total=1, speed_note=f"評価 seed {seed}  " + ("学習方策(ACT)" if who == "policy" else "手続き的な把持"),
@@ -124,15 +128,17 @@ def summarize(out: Path, policy: str) -> dict:
     for f in sorted(out.glob("results_*.jsonl")):
         rows += [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
     with_expert = [r for r in rows if "expert" in r]
+    with_policy = [r for r in rows if "policy" in r]
     summary = {
         "episodes": len(rows),
-        "policy_success": sum(r["policy"]["success"] for r in rows),
-        "policy_timed_out": sum(r["policy"]["timed_out"] for r in rows),
-        "policy_retries": sum(r["policy"].get("grip_retries", 0) for r in rows),
-        "policy_mean_sim_s": round(float(np.mean([r["policy"]["sim_seconds"] for r in rows])), 1) if rows else None,
+        "policy_episodes": len(with_policy),
+        "policy_success": sum(r["policy"]["success"] for r in with_policy),
+        "policy_timed_out": sum(r["policy"]["timed_out"] for r in with_policy),
+        "policy_retries": sum(r["policy"].get("grip_retries", 0) for r in with_policy),
+        "policy_mean_sim_s": round(float(np.mean([r["policy"]["sim_seconds"] for r in with_policy])), 1) if with_policy else None,
         "expert_episodes": len(with_expert),
         "expert_success": sum(r["expert"]["success"] for r in with_expert),
-        "both_success": sum(r["policy"]["success"] and r["expert"]["success"] for r in with_expert),
+        "both_success": sum(r["policy"]["success"] and r["expert"]["success"] for r in with_expert if "policy" in r),
         "policy": policy,
     }
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
