@@ -1,0 +1,16 @@
+{"event": "read", "pick_xy": [434.0, 130.0], "read": "3", "conf": 0.885, "truth": "3"}
+{"event": "read", "pick_xy": [236.0, 160.0], "read": "10", "conf": 0.845, "truth": "10"}
+{"event": "read", "pick_xy": [322.0, 162.0], "read": "13", "conf": 0.919, "truth": "13"}
+{"event": "read", "pick_xy": [140.0, 288.0], "read": "8", "conf": 0.325, "truth": "8"}
+{"event": "read", "pick_xy": [454.0, 274.0], "read": "15", "conf": 0.375, "truth": "16"}
+{"event": "read", "pick_xy": [298.0, 302.0], "read": "14", "conf": 0.755, "truth": "14"}
+{"event": "read", "pick_xy": [368.0, 348.0], "read": "4", "conf": 0.931, "truth": "4"}
+{"event": "read", "pick_xy": [158.0, 410.0], "read": "2", "conf": 0.874, "truth": "2"}
+{"event": "place", "label": "15", "dest": "review", "reason": "確信度が低い(0.37)", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "16", "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "2", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "2", "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "3", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "failed", "grip_retries": 2, "lost_in_transit": true, "verified": false, "mode": "presence", "present": true, "truth": null, "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "4", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "4", "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "13", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "13", "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "14", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "14", "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "10", "dest": "slot", "reason": "番号どおりの置き場へ", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "10", "reread": "", "reread_conf": 0.0}
+{"event": "place", "label": "8", "dest": "review", "reason": "確信度が低い(0.33)", "phase": "done", "grip_retries": 0, "lost_in_transit": false, "verified": true, "mode": "presence", "present": true, "truth": "8", "reread": "", "reread_conf": 0.0}
