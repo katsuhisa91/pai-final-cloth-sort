@@ -180,7 +180,12 @@ VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にして�
 
 ### Hugging Face に上げる場合
 
-再学習(1 時間半〜2 時間)なしで試せるように、モデルとデータセットを Hugging Face Hub に置く手順です(`hf auth login` 済みが前提)。
+再学習(1 時間半〜2 時間)なしで試せるように、モデルとデータセットを Hugging Face Hub に置いてあります(2026-10-17 時点で private)。
+
+- モデル: https://huggingface.co/katsuhisa91/pai-cloth-sort-act(ACT v1、評価 20 場面で 19/20 を出した実行器の既定と同じ設定で読める)
+- データセット: https://huggingface.co/datasets/katsuhisa91/cloth_pickplace(123 本)、https://huggingface.co/datasets/katsuhisa91/cloth_pickplace_v3(452 本、DART 込み、相対状態 12 次元)
+
+上げ直す手順(`hf auth login` 済みが前提):
 
 ```sh
 # モデル(学習済み ACT。config.json + safetensors + 前処理の定義)
@@ -190,7 +195,7 @@ VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にして�
   LeRobotDataset('katsuhisa91/cloth_pickplace', root='data/cloth_pickplace').push_to_hub(private=True)"
 ```
 
-上げたあとは `--policy katsuhisa91/pai-cloth-sort-act`、`--dataset.repo_id=katsuhisa91/cloth_pickplace`(`--dataset.root` なし)で参照できます。
+上げたあとは `--policy katsuhisa91/pai-cloth-sort-act`、`--dataset.repo_id=katsuhisa91/cloth_pickplace`(`--dataset.root` なし)で参照できます(private の間はアクセス権のあるトークンでログインしておく)。
 提出時に public にする場合は `--private` を外すか、Hub の設定で公開にします。
 
 ### 公開されているロボットデータとの関係
