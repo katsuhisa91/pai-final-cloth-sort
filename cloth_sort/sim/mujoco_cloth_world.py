@@ -43,6 +43,14 @@ SETTLE_T = 0.3
 RELEASE_T = 0.4
 DROP_T = 0.8
 SHAKE_T = 1.0                   # 開いても布が指に引っかかっているとき、横に 3 cm 振って戻す時間
+# 「敷く」置き方(斜め敷き): ぶら下がった布の下端が机に触れる高さで水平に進み始め、進みながらゆっくり降りる。
+# 下端が机との摩擦で後ろに留まり、布は手の後ろに順に敷かれる(ベルトコンベアのように)。進む距離は降りる高さの数倍にする
+LAY_Z0 = 0.050                  # 敷き始めの手先高さ(布の下端が机に触れる直前)
+LAY_Z1 = 0.004                  # 敷き終わりの手先高さ(唇が机のすぐ上)
+LAY_TRAVEL = 0.12               # 水平に進む距離
+LAY_T = 4.0                     # 敷く時間(3 cm/s)
+LAY_APPROACH_T = 1.0
+LAY_DIR = (0.0, -1.0)           # 進む向き(世界座標)。ロボット側へ進み、布はその反対側(机の奥)に敷かれる
 SHAKE_AMP = 0.03
 MAX_SHAKES = 2
 
@@ -288,6 +296,9 @@ class GripperArm:
         self.place_z = PLACE_Z
         self.park_q = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
         self.cmd_offset = np.zeros(3)       # 実際に IK へ渡す目標に足す外乱(模倣学習のデータ収集で使う。通常は 0)
+        self.place_mode = "drop"            # "drop": 置き場の上で放して落とす / "lay": 平らに敷いてから放す
+        self._lay_t: float | None = None
+        self.lay_params = dict(z0=LAY_Z0, z1=LAY_Z1, travel=LAY_TRAVEL, t=LAY_T)   # 実験で変えられる
 
     @property
     def limits(self):
@@ -407,6 +418,34 @@ class GripperArm:
             self.world.pieces[self.holding_id].held = False
         self.holding_id = None
         self.world.held_piece = None
+
+    def lay_step(self, dt: float, place_xy: tuple[float, float]) -> bool:
+        """つまんだ布を置き場に平らに敷く。終わったら True(そのあと release_step で放す)。
+
+        布は手先の後ろに敷かれるので、敷き終わりの手先位置は置き場の中心から進行方向に 25 mm 先。
+        """
+        P = self.lay_params
+        if self._lay_t is None:
+            self._lay_t = 0.0
+            d = np.array(LAY_DIR)
+            c = np.array(mm_to_world(place_xy))
+            half = (config.PIECE_MM / 2) / 1000.0
+            self._lay_start = np.array([*self._cmd[:3]])
+            self._lay_to = np.array([*(c + half * d), P["z1"]])
+            self._lay_from = np.array([*(self._lay_to[:2] - P["travel"] * d), P["z0"]])
+        self._lay_t += dt
+        t = self._lay_t
+        if t <= LAY_APPROACH_T:
+            self._cmd[:] = self._lay_start + (self._lay_from - self._lay_start) * (t / LAY_APPROACH_T)
+        else:
+            f = min(1.0, (t - LAY_APPROACH_T) / P["t"])
+            self._cmd[:] = self._lay_from + (self._lay_to - self._lay_from) * f
+        self._vel = 0.0
+        self._servo(dt)
+        if t >= LAY_APPROACH_T + P["t"] + 0.3:
+            self._lay_t = None
+            return True
+        return False
 
     def cloth_hangs(self, piece_id: int | None = None) -> bool:
         """開いたのに布が指に引っかかって宙にあるか(ゴムパッドとの接触が残り、布が机から浮いている)。"""

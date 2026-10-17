@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from cloth_sort import config
 from cloth_sort.learning.env import DT, MAX_EPISODE_S, PickPlaceEnv, run_expert
 from cloth_sort.learning.policy_arm import ACTController, LearnedArm
 from cloth_sort.robot.executor import Phase
@@ -65,17 +66,36 @@ def run_policy_episode(env: PickPlaceEnv, ctrl: ACTController, frames: _Frames, 
     x, y, z = env.cloth_centroid_mm()
     return {"success": pp.phase is Phase.DONE and bool(env.placed()), "steps": steps, "sim_seconds": round(world.time_s, 1),
             "pick_xy": [round(spec.pick_xy[0]), round(spec.pick_xy[1])], "place_xy": [round(spec.place_xy[0]), round(spec.place_xy[1])],
+            **neat_report(env),
             "closed": pp.closed_once, "timed_out": pp.timed_out or world.time_s > limit, "grip_retries": pp.grip_retries,
             "cloth_xy": [round(x), round(y)], "wall_seconds": round(time.time() - t0)}
 
 
-def run_expert_episode(env: PickPlaceEnv, frames: _Frames, ov: Overlay) -> dict:
+def run_expert_episode(env: PickPlaceEnv, frames: _Frames, ov: Overlay, place_mode: str = "drop") -> dict:
     t0 = time.time()
+    env.arm.place_mode = place_mode
     tr = run_expert(env, record=False, on_step=lambda: frames.maybe(env.world, ov))
+    while not env.arm.park(DT):
+        pass
     x, y, _ = env.cloth_centroid_mm()
     return {"success": tr.success, "steps": len(tr.phases), "sim_seconds": round(tr.sim_seconds, 1),
             "grip_retries": tr.grip_retries, "final_phase": tr.final_phase, "cloth_xy": [round(x), round(y)],
-            "wall_seconds": round(time.time() - t0)}
+            "wall_seconds": round(time.time() - t0), **neat_report(env)}
+
+
+def neat_report(env: PickPlaceEnv) -> dict:
+    """置いた布のきれいさと、俯瞰カメラで番号を読み直せるか(置き方の評価。アームは退避済みであること)。"""
+    from cloth_sort.perception.reader import LabelReader
+    n = env.neatness()
+    neat = bool(env.placed() and env.neat())
+    image = env.world.render_camera()
+    half = config.PIECE_MM
+    x0, y0 = int(env.spec.place_xy[0] - half), int(env.spec.place_xy[1] - half)
+    crop = image[max(0, y0):y0 + 2 * half, max(0, x0):x0 + 2 * half]
+    r = LabelReader().read(crop)
+    truth = env.world.pieces[env.spec.target_id].label
+    return {"neat": neat, "neatness": n, "reread": r.text, "reread_conf": round(r.confidence, 2),
+            "reread_ok": bool(r.text == truth)}
 
 
 def main() -> None:
@@ -89,6 +109,7 @@ def main() -> None:
     ap.add_argument("--device", default=None)
     ap.add_argument("--seed-base", type=int, default=EVAL_SEED_BASE, help="評価シードの起点(補正量の測定には別の起点を使う)")
     ap.add_argument("--place-bias", type=float, default=None, help="置く点の補正量 [mm](既定は policy_arm.PLACE_BIAS_MM)")
+    ap.add_argument("--expert-place", choices=["drop", "lay"], default="drop", help="教師の置き方(lay: 平らに敷く)")
     ap.add_argument("--ensemble", type=float, default=0.0,
                     help="時間方向の平均の係数(ACT の既定は 0.01、負なら新しい予測を重く)。0(既定)なら平均せず 100 ステップぶんをそのまま実行する")
     ap.add_argument("--start", type=int, default=0, help="評価シードの開始番号(並列に分けて回すとき用)")
@@ -116,7 +137,7 @@ def main() -> None:
             ov.phase = "学習方策(ACT)で実行中" if who == "policy" else "手続き(状態機械)"
             frames = _Frames(a.out / "frames" / f"{seed}_{who}" if a.video else None)
             row[who] = (run_policy_episode(env, ctrl, frames, ov, a.retries, a.place_bias) if who == "policy"
-                        else run_expert_episode(env, frames, ov))
+                        else run_expert_episode(env, frames, ov, a.expert_place))
             row["n_pieces"] = spec.n_pieces
             row["place"] = spec.place_name
             if a.video and frames.n:
@@ -143,6 +164,10 @@ def summarize(out: Path, policy: str) -> dict:
         "policy_mean_sim_s": round(float(np.mean([r["policy"]["sim_seconds"] for r in with_policy])), 1) if with_policy else None,
         "expert_episodes": len(with_expert),
         "expert_success": sum(r["expert"]["success"] for r in with_expert),
+        "policy_neat": sum(r["policy"].get("neat", False) for r in with_policy),
+        "policy_reread_ok": sum(r["policy"].get("reread_ok", False) for r in with_policy),
+        "expert_neat": sum(r["expert"].get("neat", False) for r in with_expert),
+        "expert_reread_ok": sum(r["expert"].get("reread_ok", False) for r in with_expert),
         "both_success": sum(r["policy"]["success"] and r["expert"]["success"] for r in with_expert if "policy" in r),
         "policy": policy,
     }

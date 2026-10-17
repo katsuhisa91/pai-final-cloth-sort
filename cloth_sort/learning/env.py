@@ -171,12 +171,64 @@ class PickPlaceEnv:
         px, py = self.spec.place_xy
         return abs(x - px) <= PLACE_TOL_MM and abs(y - py) <= PLACE_TOL_MM and z < 0.02
 
+    def neatness(self) -> dict:
+        """置いた布の「きれいさ」: 平らか(頂点の高さの幅)、広がっているか(凸包の面積 / 布の面積)、目標からのずれ。"""
+        v = self.world.cloth_vertices(self.spec.target_id)
+        xy = v[:, :2] * 1000.0
+        hull = _convex_hull_area(xy)
+        x, y, z = self.cloth_centroid_mm()
+        px, py = self.spec.place_xy
+        return {"z_range_mm": round(float(v[:, 2].max() - v[:, 2].min()) * 1000.0, 1),
+                "area_ratio": round(hull / (config.PIECE_MM ** 2), 3),
+                "offset_mm": round(((x - px) ** 2 + (y - py) ** 2) ** 0.5, 1),
+                "face_up": bool(self.cloth_normal()[2] > 0.3)}
+
+    def cloth_normal(self) -> np.ndarray:
+        """布の表面の平均法線(置いたときに +z なら表が上。flex の三角形は表が +z になる向きで定義してある)。"""
+        m, d = self.world.model, self.world.data
+        f = self.world.flex_id(self.spec.target_id)
+        va = m.flex_vertadr[f]
+        ea, en = m.flex_elemadr[f], m.flex_elemnum[f]
+        tri = m.flex_elem[ea * 3:(ea + en) * 3].reshape(-1, 3) + va
+        v = d.flexvert_xpos
+        n = np.cross(v[tri[:, 1]] - v[tri[:, 0]], v[tri[:, 2]] - v[tri[:, 0]])
+        n = n.sum(axis=0)
+        return n / (np.linalg.norm(n) + 1e-12)
+
+    def neat(self, z_range_mm: float = 8.0, area_ratio: float = 0.8) -> bool:
+        """平らに広がって目標の範囲に載っているか(落とすだけの置き方では満たせない基準)。"""
+        n = self.neatness()
+        return self.placed() and n["z_range_mm"] <= z_range_mm and n["area_ratio"] >= area_ratio
+
     def mark_placed(self) -> None:
         p = self.world.pieces[self.spec.target_id]
         p.held = False
         p.placed_at = self.spec.place_name
         self.world.held_piece = None
         self.world.gripper_closed = False
+
+
+def _convex_hull_area(pts: np.ndarray) -> float:
+    """2D 点群の凸包の面積(Andrew の単調鎖)。"""
+    p = sorted({(float(a), float(b)) for a, b in pts})
+    if len(p) < 3:
+        return 0.0
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for q in p:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    for q in reversed(p):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    hull = lower[:-1] + upper[:-1]
+    return 0.5 * abs(sum(hull[i][0] * hull[(i + 1) % len(hull)][1] - hull[(i + 1) % len(hull)][0] * hull[i][1]
+                         for i in range(len(hull))))
 
 
 def with_relative_goal(basic: np.ndarray) -> np.ndarray:
@@ -199,6 +251,7 @@ class Trajectory:
     grip_retries: int = 0
     final_phase: str = ""
     sim_seconds: float = 0.0
+    neatness: dict = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.action)
@@ -248,4 +301,5 @@ def run_expert(env: PickPlaceEnv, record: bool = True, images: bool = True, on_s
     tr.final_phase = phase.value
     tr.sim_seconds = env.time_s
     tr.success = phase is not Phase.FAILED and env.placed()
+    tr.neatness = {**env.neatness(), "neat": bool(tr.success and env.neat())}
     return tr

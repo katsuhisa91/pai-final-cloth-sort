@@ -27,7 +27,7 @@ TRAIN_SEED_BASE = 10_000
 
 
 def collect_shard(staging: Path, episodes: int, shard: int, n_shards: int, noise_m: float = 0.0,
-                  seed_base: int = TRAIN_SEED_BASE) -> None:
+                  seed_base: int = TRAIN_SEED_BASE, place_mode: str = "drop") -> None:
     staging.mkdir(parents=True, exist_ok=True)
     env = PickPlaceEnv()
     for i in range(shard, episodes, n_shards):
@@ -37,17 +37,19 @@ def collect_shard(staging: Path, episodes: int, shard: int, n_shards: int, noise
             continue
         t0 = time.time()
         env.reset(seed)
+        env.arm.place_mode = place_mode
         tr = run_expert(env, noise_m=noise_m, noise_seed=seed)
         save_trajectory(path, tr)
         print(f"[shard {shard}] seed {seed} pieces={tr.spec.n_pieces} place={tr.spec.place_name} "
-              f"steps={len(tr)} success={tr.success} retries={tr.grip_retries} final={tr.final_phase} "
-              f"wall={time.time() - t0:.0f}s", flush=True)
+              f"steps={len(tr)} success={tr.success} neat={tr.neatness.get('neat')} retries={tr.grip_retries} "
+              f"final={tr.final_phase} wall={time.time() - t0:.0f}s", flush=True)
 
 
 def save_trajectory(path: Path, tr: Trajectory) -> None:
     meta = {"seed": tr.spec.seed, "n_pieces": tr.spec.n_pieces, "place_name": tr.spec.place_name,
             "pick_xy": list(tr.spec.pick_xy), "place_xy": list(tr.spec.place_xy), "success": tr.success,
-            "grip_retries": tr.grip_retries, "final_phase": tr.final_phase, "sim_seconds": tr.sim_seconds}
+            "grip_retries": tr.grip_retries, "final_phase": tr.final_phase, "sim_seconds": tr.sim_seconds,
+            "neatness": tr.neatness}
     np.savez_compressed(path, top=np.stack(tr.top), wrist=np.stack(tr.wrist), state=np.stack(tr.state),
                         action=np.stack(tr.action), phases=np.array(tr.phases), meta=json.dumps(meta))
 
@@ -109,16 +111,17 @@ def main() -> None:
     ap.add_argument("--state", choices=["basic", "relative"], default="basic", help="relative: 目標と手先の差を状態に足す")
     ap.add_argument("--noise", type=float, default=0.0, help="DART 方式の外乱(手先目標に足す標準偏差 [m]、例 0.01)")
     ap.add_argument("--seed-base", type=int, default=TRAIN_SEED_BASE, help="収集シードの起点(外乱ありの収集は別の起点にする)")
+    ap.add_argument("--place", choices=["drop", "lay"], default="drop", help="lay: 落とさず平らに敷く教師でデモを集める")
     a = ap.parse_args()
     if a.pack is not None:
         print(json.dumps(pack(a.pack, a.out, a.repo_id, a.state), indent=2))
         return
     if a.shard is not None:
-        collect_shard(a.staging, a.episodes, a.shard, a.n_shards, a.noise, a.seed_base)
+        collect_shard(a.staging, a.episodes, a.shard, a.n_shards, a.noise, a.seed_base, a.place)
         return
     procs = [subprocess.Popen([sys.executable, "-m", "cloth_sort.learning.collect", "--staging", str(a.staging),
                                "--episodes", str(a.episodes), "--shard", str(k), "--n-shards", str(a.workers),
-                               "--noise", str(a.noise), "--seed-base", str(a.seed_base)])
+                               "--noise", str(a.noise), "--seed-base", str(a.seed_base), "--place", a.place])
              for k in range(a.workers)]
     codes = [p.wait() for p in procs]
     files = sorted(a.staging.glob("ep_*.npz"))

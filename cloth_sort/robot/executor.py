@@ -144,6 +144,12 @@ class PickPlace:
             elif a.move_to(self.place_xy, 1.0, dt):
                 self.phase = Phase.LOWER
         elif self.phase is Phase.LOWER:
+            if getattr(a, "place_mode", "drop") == "lay":
+                # 敷く置き方(2 本指版): 布の下端が机に触れる高さから水平に進みながら降りて、平らに敷く
+                if a.lay_step(dt, self.place_xy):        # type: ignore[attr-defined]
+                    self.phase = Phase.RELEASE           # 敷き終わり(布は机の上)。放して退避する
+                    self._dwell = 0.0
+                return self.phase
             if a.move_to(self.place_xy, self.lower_z, dt):
                 if hasattr(a, "holding") and not a.holding():
                     # 搬送中に落とした。布は途中に残っているので、再試行せず失敗として人に回す
