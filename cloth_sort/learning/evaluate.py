@@ -118,7 +118,7 @@ def main() -> None:
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     if a.summarize:
-        print(json.dumps(summarize(a.out, str(a.policy)), ensure_ascii=False, indent=2))
+        print(json.dumps(summarize(a.out, _display_path(a.policy)), ensure_ascii=False, indent=2))
         return
     ctrl = None if a.skip_policy else ACTController(a.policy, device=a.device, ensemble_coeff=a.ensemble if a.ensemble != 0 else None)
     env = PickPlaceEnv()
@@ -146,7 +146,15 @@ def main() -> None:
         print(json.dumps(row, ensure_ascii=False), flush=True)
         (a.out / f"results_{a.start:04d}.jsonl").write_text(
             "\n".join(json.dumps(r, ensure_ascii=False) for r in results) + "\n")
-    print(json.dumps(summarize(a.out, str(a.policy)), ensure_ascii=False, indent=2))
+    print(json.dumps(summarize(a.out, _display_path(a.policy)), ensure_ascii=False, indent=2))
+
+
+def _display_path(p: Path) -> str:
+    """結果に残すモデルの場所。手元の絶対パス(ユーザー名を含む)は残さず、作業ディレクトリからの相対にする。"""
+    try:
+        return str(Path(p).resolve().relative_to(Path.cwd()))
+    except ValueError:
+        return str(p)
 
 
 def summarize(out: Path, policy: str) -> dict:

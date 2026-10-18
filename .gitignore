@@ -16,3 +16,4 @@ runs/eval/*/*.mp4
 runs/eval/*/worker_*.log
 runs/eval/recheck_*/
 runs/eval/fig_*/
+runs/*/run.log
