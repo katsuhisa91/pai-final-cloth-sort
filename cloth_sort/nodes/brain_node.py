@@ -8,17 +8,20 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 
 from dora import Node
 
 from cloth_sort import config
 from cloth_sort.nodes.common import arrow_to_image, arrow_to_json, json_to_arrow
+from cloth_sort.ml.feedback import save_queue_item
 from cloth_sort.perception.detect import detect_pieces
 from cloth_sort.perception.reader import LabelReader
 from cloth_sort.planning.planner import Destination, Observation, Planner
 
 MIN_CONF = float(os.environ.get("MIN_CONFIDENCE", "0.6"))
 SETTLE_S = float(os.environ.get("SETTLE_SECONDS", "1.5"))
+REVIEW_QUEUE = Path(os.environ.get("REVIEW_QUEUE", "runs/dora/review_queue"))
 
 
 def main() -> None:
@@ -47,9 +50,12 @@ def main() -> None:
                 image = arrow_to_image(event["value"], event["metadata"])
                 dets = detect_pieces(image, background, region=config.SOURCE_AREA)
                 observations = []
-                for d in dets:
+                for k, d in enumerate(dets):
                     r = reader.read(d.crop)
                     observations.append(Observation(d.center, r.text, r.confidence))
+                    if not reader.accept(r):
+                        # 要確認トレイへ回る布の切り出しを残す(人が番号を付けて再学習に使う)
+                        save_queue_item(REVIEW_QUEUE, k, d.crop, r.text, r.confidence, d.center, "dora")
                     detections_for_overlay.append([list(d.bbox), r.text or "?", r.confidence])
                     node.send_output("reading", json_to_arrow({"pick_xy": d.center, "read": r.text, "conf": r.confidence}))
                 tasks = planner.plan(observations, (config.ARM_BASE[0], config.ARM_BASE[1] - 40))

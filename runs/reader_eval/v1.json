@@ -1,0 +1,21 @@
+{
+  "pieces": 478,
+  "slot_correct": 323,
+  "slot_wrong": 10,
+  "review": 145,
+  "review_but_correct": 46,
+  "slot_correct_rate": 0.676,
+  "slot_wrong_rate": 0.021,
+  "review_rate": 0.303,
+  "wrong_examples": {
+    "10->1": 2,
+    "10->11": 1,
+    "14->1": 1,
+    "17->7": 1,
+    "16->76": 1,
+    "13->1": 1,
+    "18->1": 1,
+    "9->7": 1
+  },
+  "weights": "models/charnet.pt"
+}

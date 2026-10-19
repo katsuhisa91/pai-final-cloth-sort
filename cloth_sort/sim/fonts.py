@@ -26,6 +26,18 @@ TRAIN_FONTS: list[tuple[str, int]] = [
     (f"{_SUPPLEMENTAL}/Trebuchet MS.ttf", 0),
 ]
 
+# v2 で足した学習用フォント(筆記体・手書き風)。装飾が強いもの(Party LET、Zapfino)と数字のないもの(Kokonor)は除いた
+EXTRA_TRAIN_FONTS: list[tuple[str, int]] = [
+    (f"{_SUPPLEMENTAL}/Apple Chancery.ttf", 0),
+    (f"{_SUPPLEMENTAL}/Brush Script.ttf", 0),
+    (f"{_SUPPLEMENTAL}/Herculanum.ttf", 0),
+    (f"{_SUPPLEMENTAL}/Luminari.ttf", 0),
+    (f"{_SUPPLEMENTAL}/Papyrus.ttc", 0),
+    (f"{_SUPPLEMENTAL}/Savoye LET.ttc", 0),
+    (f"{_SUPPLEMENTAL}/SnellRoundhand.ttc", 0),
+    (f"{_SUPPLEMENTAL}/Trattatello.ttf", 0),
+]
+
 # 学習に使わない筆跡。シミュレータ内の布片と評価に使う
 HELDOUT_FONTS: list[tuple[str, int]] = [
     (f"{_SYSTEM}/MarkerFelt.ttc", 0),

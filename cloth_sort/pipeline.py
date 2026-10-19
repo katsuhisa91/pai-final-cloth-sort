@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from cloth_sort import config
+from cloth_sort.ml.feedback import save_queue_item
 from cloth_sort.perception.detect import detect_pieces
 from cloth_sort.perception.reader import LabelReader
 from cloth_sort.planning.planner import Destination, Observation, Planner, Task
@@ -111,9 +112,12 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
     image = world.render_camera()
     dets = detect_pieces(image, background, region=config.SOURCE_AREA)
     observations: list[Observation] = []
-    for d in dets:
+    for k, d in enumerate(dets):
         r = reader.read(d.crop)
         observations.append(Observation(d.center, r.text, r.confidence))
+        if out and not reader.accept(r):
+            # 要確認トレイへ回る布の切り出しを残す。人が番号を付けると再学習に使える(ml/feedback.py)
+            save_queue_item(out / "review_queue", k, d.crop, r.text, r.confidence, d.center, f"seed {seed}")
         ov.detections.append((d.bbox, r.text or "?", r.confidence))
         gt = world.piece_at(d.center)
         records.append({"event": "read", "pick_xy": d.center, "read": r.text, "conf": round(r.confidence, 3),
