@@ -184,6 +184,7 @@ VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にして�
 ### Hugging Face に上げる場合
 
 再学習(1 時間半〜2 時間)なしで試せるように、モデルとデータセットを Hugging Face Hub に置いてあります(2026-10-17 時点で private)。
+公開する手順は `docs/huggingface_publish.md`。
 
 - モデル: https://huggingface.co/katsuhisa91/pai-cloth-sort-act(ACT v1、評価 20 場面で 19/20 を出した実行器の既定と同じ設定で読める)
 - データセット: https://huggingface.co/datasets/katsuhisa91/cloth_pickplace(123 本)、https://huggingface.co/datasets/katsuhisa91/cloth_pickplace_v3(452 本、DART 込み、相対状態 12 次元)
