@@ -5,7 +5,7 @@
 dora-rs の dataflow としてつなぎ、MuJoCo の物理シミュレーション上で Franka Panda を動かしています。
 布は変形体(MuJoCo の flex)で、2 本指ハンド(ゴムパッド付き)でつまむ把持そのものを物理に任せています。
 
-- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(約 2 分半、1920x1080。説明スライド + 単一プロセス版の実行(2 倍速、画面に明記))
+- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(2 分 54 秒、1920x1080。説明スライド + 学習した方策(ACT)でアームを動かした仕分けの実行(単一プロセス版、2 倍速、画面に明記))
 - 実行部分のみ: `runs/cloth8/cloth_sort.mp4`(単一プロセス版、seed 4、等速)。学習した方策で同じ場面を回した動画は `runs/cloth8_act/cloth_sort.mp4`。dora 版の実行は `./run_dora.sh` で `runs/dora/frames` に出る(同じ seed で搬送中の落下が 4 枚。把持の成否は物理の微小な差で変わる)
 - 報告書: `report/report.pdf`(元は `report/report.html`)
 - 提出の流れ(public 化、YouTube、omnicampus): `SUBMISSION.md`
@@ -32,8 +32,9 @@ export PYTHONPATH=$PWD
 ./run_dora.sh
 ./run_dora.sh graph     # 構成図
 
-# 4. 提出用の動画(スライド + dora 版の実行フレーム、実行部分は 2 倍速)を作る
-.venv/bin/python tools/make_submission_video.py --frames runs/cloth8/frames --log runs/cloth8/log.jsonl --summary runs/cloth8/summary.json --fig runs/cloth8/top_detect.png --run-speed 2
+# 4. 提出用の動画(スライド + 学習した方策での実行の録画、実行部分は 2 倍速)を作る
+.venv/bin/python tools/make_submission_video.py --run-video runs/cloth8_act2/cloth_sort.mp4 --log runs/cloth8_act2/log.jsonl \
+  --summary runs/cloth8_act2/summary.json --fig runs/cloth8/top_detect.png --run-speed 2 --arm policy
 
 # テスト
 .venv/bin/python -m pytest -q
@@ -41,6 +42,8 @@ export PYTHONPATH=$PWD
 
 MuJoCo の描画は OpenGL(macOS では CGL)を使うので、描画が必要なコマンドはサンドボックス等で
 ウィンドウサーバに繋げない環境だと失敗します。物理計算とテストは描画なしで動きます。
+手書き風フォントは macOS のものを使います。Linux(CI など)では DejaVu / Liberation で代用するので、
+テストは通りますが、報告している読み取り精度は macOS のフォント構成での値です。
 
 ## 構成
 
@@ -65,7 +68,7 @@ cloth_sort/
   viewer.py            動画フレームの描画(3D 視点 + ハンド追従カメラ + 俯瞰カメラ + 状態パネル)
 dataflow.yml           dora のノード構成(つなぎ方)
 tools/                 提出動画の生成、読み取りの手試し、シーンの確認
-tests/                 pytest(22 件)
+tests/                 pytest(27 件。GitHub Actions で push ごとに実行)
 ```
 
 ## 設計の要点
@@ -297,7 +300,7 @@ AI アルゴリズムそのものではなく「動かし続けるための基�
 
 | 講義で扱った内容 | 本リポジトリでの対応 |
 |---|---|
-| MLOps・RobOps(第1・2回: データ収集 → 学習 → 評価 → 運用のループ) | 実行ログを JSONL で残し、置いた後にカメラで読み直して計画と照合(自己検証)。低確信度は止めずに要確認トレイへ逃がし、人の確認結果を再学習データにできる構造 |
+| MLOps・RobOps(第1・2回: データ収集 → 学習 → 評価 → 運用のループ) | 実行ログを JSONL で残し、置いた後にカメラで読み直して計画と照合(自己検証)。低確信度は止めずに要確認トレイへ逃がし、人の確認結果を再学習データにできる構造(`ml/feedback.py`、`tools/review_label.py`) |
 
 ### 講義の想定と違う点(意図して外したもの)
 

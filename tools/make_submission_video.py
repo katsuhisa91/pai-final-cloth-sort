@@ -1,9 +1,12 @@
 """提出用の動画(1920x1080、MP4)を作る。
 
-    .venv/bin/python tools/make_submission_video.py --frames runs/dora/frames --out runs/submission/PAI最終課題_katsuhisa91.mp4
+    # 提出版: 学習した方策(ACT)でアームを動かした仕分けの録画を 2 倍速で使う
+    .venv/bin/python tools/make_submission_video.py --run-video runs/cloth8_act2/cloth_sort.mp4 \
+        --log runs/cloth8_act2/log.jsonl --summary runs/cloth8_act2/summary.json \
+        --fig runs/cloth8/top_detect.png --run-speed 2 --arm policy
 
-構成: タイトル → 課題 → 仕組み → AI → 実行の様子(等速) → 結果 → 工夫と次の一歩。
-実行の様子は dora 版(runs/dora/frames、MuJoCo で描画した 1920x1080)のフレームをそのまま使い、倍速はかけない。
+構成: タイトル → 課題 → 仕組み → AI ①番号読み取り → AI ②アームの動き(模倣学習) → 実行の様子 → 結果 → 工夫・講座との対応・次の一歩。
+実行の様子は MuJoCo で描画した 1920x1080 のフレーム(--frames の PNG か、--run-video の MP4)をそのまま使う。
 """
 
 from __future__ import annotations
@@ -32,6 +35,8 @@ RED = (220, 80, 80)
 ACCOUNT = "katsuhisa91"
 SEED = 4
 SPEED = 1
+ARM = "procedural"  # 実行部分のアーム: procedural(状態機械 + IK)/ policy(模倣学習した ACT)
+SUMMARY: dict = {}
 
 
 def speed_label() -> str:
@@ -43,10 +48,10 @@ def font(size: int, bold: bool = False):
 
 
 def wrap(d: ImageDraw.ImageDraw, text: str, f, max_w: int) -> list[str]:
-    """文字単位で折り返す(日本語前提)。"""
+    """文字単位で折り返す(日本語前提)。句読点・閉じ括弧は行頭に置かない。"""
     lines, cur = [], ""
     for ch in text:
-        if d.textlength(cur + ch, font=f) > max_w and cur:
+        if d.textlength(cur + ch, font=f) > max_w and cur and ch not in "、。)」・":
             lines.append(cur)
             cur = ch
         else:
@@ -113,7 +118,8 @@ def slide_title() -> Image.Image:
     d.text((120, 440), "手書きの番号を読み取り、番号どおりの置き場へ運ぶ", fill=FG, font=font(44))
     d.text((120, 560), "Physical AI 応用編1 最終課題", fill=ACCENT, font=font(36, bold=True))
     d.text((120, 615), f"omnicampus: {ACCOUNT}", fill=DIM, font=font(32))
-    d.text((120, 760), "カメラ → 検出 → 番号読み取り(自前学習 CNN) → 計画 → アーム制御(IK) → 検証", fill=DIM, font=font(30))
+    arm = "搬送(模倣学習した方策 ACT)" if ARM == "policy" else "アーム制御(IK)"
+    d.text((120, 760), f"カメラ → 検出 → 番号読み取り(自前学習 CNN) → 計画 → {arm} → 検証", fill=DIM, font=font(30))
     d.text((120, 805), "MuJoCo 上の Franka Panda が、変形体の布を 2 本指でつまんで運ぶ(把持は物理任せ)", fill=DIM, font=font(30))
     return img
 
@@ -148,7 +154,7 @@ def slide_system() -> Image.Image:
         ("背景差分で検出", "布の色に依らない"),
         ("番号読み取り", "1 文字 CNN + 分割"),
         ("計画", "確信度 0.6 以上は置き場、未満は要確認"),
-        ("pick & place", "2 本指で布をつまむ(物理)"),
+        ("pick & place", "学習方策(ACT)が手先を動かし 2 本指でつまむ" if ARM == "policy" else "2 本指で布をつまむ(物理)"),
         ("検証", "退避後に置き場を再撮影"),
     ]
     bw, gap, top = 262, 44, y + 30
@@ -172,12 +178,14 @@ def slide_system() -> Image.Image:
            fill=DIM, font=font(26))
     d.text((160, y3 + 240), "実機化はロボット側(sim)の RobotArm 実装を 1 つ差し替えるだけ。AI 側と記録は変更なし",
            fill=DIM, font=font(26))
+    d.text((160, y3 + 280), "動画の実行部分は同じ部品を 1 プロセスにまとめた版(pipeline.py)の録画",
+           fill=DIM, font=font(26))
     return img
 
 
 def slide_ai(metrics: dict | None) -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, "AI: 手書き番号を読む CNN を自前で学習")
+    y = heading(d, "AI ①: 手書き番号を読む CNN を自前で学習")
     n_train = metrics["n_train"] if metrics else 8800
     params = metrics["params"] if metrics else 468139
     heldout = metrics["heldout"]["accuracy"] if metrics else 0.846
@@ -193,6 +201,42 @@ def slide_ai(metrics: dict | None) -> Image.Image:
     ]
     bullets(d, items, 90, y + 10, 1760, size=34, gap=22)
            fill=DIM, font=font(28))
+    return img
+
+
+def slide_policy() -> Image.Image:
+    img, d = new_canvas()
+    y = heading(d, "AI ②: アームの動きを模倣学習(LeRobot の ACT)")
+    bullets(d, [
+        "教師: 手で作った把持の手順(状態機械 + IK)。これでデモを 154 本集め、成功 123 本・5.1 万フレームを LeRobot 形式で保存",
+        "入力: 俯瞰カメラ + 手首カメラの画像、手先位置、目標(つまむ点・置く点)。出力: 手先の目標位置と指の開閉(20 Hz、5 秒先まで)",
+        "ACT(52M パラメータ)を 20,000 ステップ学習(Mac の GPU で約 1 時間 45 分)",
+        "どの布をどこへ運ぶかは上位(読み取り・計画)が決め、方策は「つまんで運んで放す」を担当",
+    ], 90, y + 10, 1000, size=30, gap=16)
+
+    # 評価: 学習に使っていない 20 場面(固定シード)での成功数
+    x0, y0 = 1160, y + 10
+    d.rounded_rectangle([x0, y0, W - 80, y0 + 560], radius=14, fill=PANEL)
+    d.text((x0 + 30, y0 + 24), "学習に使っていない 20 場面(固定シード)", fill=FG, font=font(28, bold=True))
+    rows = [
+        ("教師(手続き的な把持)", 12, DIM),
+        ("学習した方策(そのまま)", 14, ACCENT),
+        ("+ 実行器の改善", 19, OK),
+    ]
+    by = y0 + 90
+    for label, n, color in rows:
+        d.text((x0 + 30, by), label, fill=FG, font=font(26))
+        bar_x, bar_w = x0 + 30, 520
+        d.rectangle([bar_x, by + 42, bar_x + bar_w, by + 74], fill=(50, 52, 62))
+        d.rectangle([bar_x, by + 42, bar_x + int(bar_w * n / 20), by + 74], fill=color)
+        d.text((bar_x + bar_w + 20, by + 36), f"{n} / 20", fill=color, font=font(34, bold=True))
+        by += 120
+    note = "改善: つかみ直し・布の振り落とし・5 秒ごとの開ループ実行・置く位置の系統誤差(22 mm)の補正。データを 4 倍にしても差は出なかった"
+    for line in wrap(d, note, font(23), W - 80 - x0 - 60):
+        d.text((x0 + 30, by + 4), line, fill=DIM, font=font(23))
+        by += 34
+
+           fill=DIM, font=font(26))
     return img
 
 
@@ -224,14 +268,16 @@ def slide_results(summary: dict, log: list[dict]) -> Image.Image:
         # dora 版のログは event=record、単一プロセス版は event=place。確信度は理由の文字列からも拾う
         if rec.get("event") not in ("record", "place"):
             continue
-        truth, read = rec.get("truth"), rec.get("label")
+        truth, read = rec.get("truth") or rec.get("label"), rec.get("label")
         conf = rec.get("confidence")
         if conf is None:
             m = re.search(r"\(([0-9.]+)\)", rec.get("reason", ""))
             conf = float(m.group(1)) if m else 0.0
         if rec.get("phase") == "failed":
-            why = "搬送中に落下" if rec.get("lost_in_transit") else f"つかめず(再試行 {rec.get('grip_retries', 0)} 回)"
-            rows.append(f"正解 {truth} → {why}。人が拾う")
+            retries = rec.get("grip_retries", 0)
+            why = (f"{retries} 回つかみ直したが搬送中に落下" if retries else "搬送中に落下") if rec.get("lost_in_transit") \
+                else f"つかめず(再試行 {retries} 回)"
+            rows.append(f"番号 {truth} → {why}。要確認として人へ")
         elif rec.get("dest") == "review":
             if truth == read:
                 rows.append(f"正解 {truth} → 読み {read}(正しいが確信度 {conf:.2f} で低い)")
@@ -244,31 +290,39 @@ def slide_results(summary: dict, log: list[dict]) -> Image.Image:
     bullets(d, rows, 90, y2 + 60, 1760, size=30, gap=10)
     d.text((80, 885), "読み違えた布片はすべて要確認へ回り、誤った置き場には 1 枚も置かれなかった",
            fill=ACCENT, font=font(32, bold=True))
-    d.text((80, 935), f"シミュレーション時間 {summary['sim_seconds']:.0f} 秒(MuJoCo、変形体の布)。把持の失敗 {summary.get('grasp_failed', 0)} 枚、再試行 {summary.get('grasp_retries', 0)} 回。"
-           f"検証は置き場に布があるかをカメラで確認",
+    arm = "アームは学習した方策(ACT)" if ARM == "policy" else "アームは手続き的な把持(状態機械 + IK)"
+    d.text((80, 935), f"{arm}。シミュレーション時間 {summary['sim_seconds']:.0f} 秒(MuJoCo、変形体の布)。"
+           f"再試行 {summary.get('grasp_retries', 0)} 回。検証は置き場に布があるかをカメラで確認",
            fill=DIM, font=font(24))
-    d.text((80, 970), "同じ seed・同じコードの dora 版では搬送中に 4 枚落とした。把持の成否は物理の微小な差で変わる",
-           fill=DIM, font=font(24))
+    if ARM == "policy":
+        d.text((80, 970), "同じ seed で手続き的な把持を使うと、置き場 5 + 要確認 3、失敗 0。把持の成否は物理の微小な差で揺れる",
+               fill=DIM, font=font(24))
     return img
 
 
 def slide_next() -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, "工夫した点と次の一歩")
-    d.text((80, y), "工夫した点", fill=ACCENT, font=font(36, bold=True))
-    bullets(d, [
-        "迷ったら止めずに人へ回す設計。誤配置ゼロを最優先にした",
-        "置いた後に読み直す自己検証。判断とその根拠を JSONL に残し、再学習の種にできる",
-        "ロボット側と AI 側を dora で分離。2D → 剛体 + 吸着 → 変形体 + 2 本指の載せ替えは RobotArm 1 クラスの差し替え",
-        "平らな布を平行グリッパでつまむため、片方の指に 2.5 mm の唇を付け、閉じる間は押さえ指を世界に対して止める動きにした",
-        "つかみ損ねたら撮り直して再試行、搬送中に落としたら失敗として人へ。把持の成否を物理が決める",
-    ], 90, y + 60, 880, size=28)
-    d.text((1000, y), "次の一歩", fill=WARN, font=font(36, bold=True))
-    bullets(d, [
-        "置き方: 布は折れたまま落ちるので、平らに並べる工程(敷く動き、治具、人手)を足す",
-        "SO-101 など LeRobot 対応アームで RobotArm を実装し、実機で同じ dataflow を動かす",
-    ], 1010, y + 60, 840, size=28)
-    d.text((80, 900), "コード: github.com/katsuhisa91/pai-final-cloth-sort(Apache-2.0)", fill=FG, font=font(32, bold=True))
+    y = heading(d, "工夫した点・講座の学びの使い方・次の一歩")
+    col_w = 560
+    cols = [
+        ("工夫した点", ACCENT, [
+            "迷ったら止めずに人へ回す。誤配置ゼロを最優先にした",
+            "平らな布を平行グリッパでつまむため、片方の指に 2.5 mm の唇を付け、押さえ指を止めて閉じる",
+            "方策の失敗を 1 件ずつ再現して分解し、学習のやり直しでなく実行器の修正で 14 → 19 / 20",
+        ]),
+        ("講座の学びの使い方", OK, [
+        ]),
+        ("次の一歩", WARN, [
+            "布は折れたまま落ちる。敷く置き方を教師に足したが、方策は 8 / 20 止まり。ここを伸ばす",
+            "SO-101 など LeRobot 対応アームで RobotArm を実装し、実機のデモで同じ学習を回す",
+        ]),
+    ]
+    x = 80
+    for title, color, items in cols:
+        d.text((x, y), title, fill=color, font=font(34, bold=True))
+        bullets(d, items, x + 6, y + 64, col_w, size=28, gap=18)
+        x += col_w + 40
+    d.text((80, 910), "コード: github.com/katsuhisa91/pai-final-cloth-sort(Apache-2.0)", fill=FG, font=font(32, bold=True))
     return img
 
 
@@ -278,11 +332,24 @@ def compose_frame(src: Image.Image) -> Image.Image:
     if src.size == (W, H):
         # MuJoCo 版のフレームは 1920x1080 で、タイトル・3D 視点・俯瞰カメラ・パネルを含む。そのまま使う
         img = src.convert("RGB")
+        d = ImageDraw.Draw(img)
+        arm = "  アームは学習方策(ACT)" if ARM == "policy" else ""
+        if ARM == "policy":
+            # 録画のフッタは手続き版の文言(アーム制御(IK))のままなので、方策版の流れに書き換える
+            d.rectangle([0, 1046, 1230, H], fill=BG)
+            d.text((30, 1052), "カメラ → 検出 → 番号読み取り(CNN) → 計画 → 学習方策(ACT)が手先目標を出力 → IK → 把持(物理) → 検証",
+                   fill=DIM, font=font(17))
+        if SUMMARY and img.crop((1250, 966, 1880, 979)).convert("L").getextrema()[1] > 150:
+            # 録画の最終行は「検証 OK」の数え方に誤りがあった(要確認トレイの分も数えていた。pipeline.py は修正済み)
+            s = SUMMARY
+            d.rectangle([1250, 961, 1885, 983], fill=PANEL)
+            d.text((1256, 960), f"置き場へ {s['placed_slot']} 枚(検証 OK {s['placed_slot_verified']})、"
+                   f"要確認 {s['review'] + s.get('grasp_failed', 0)} 枚、所要 {s['sim_seconds']:.0f} s",
+                   fill=FG, font=font(16))
         if SPEED > 1:
-            d = ImageDraw.Draw(img)
             # フレーム左上の「実時間 / real-time」表示を上書きして矛盾をなくす
-            d.rectangle([126, 52, 560, 78], fill=BG)
-            d.text((130, 54), f"{SPEED} 倍速再生(録画は等速)  MuJoCo(変形体の布 + 2 本指)", fill=DIM, font=font(17))
+            d.rectangle([126, 50, 900, 80], fill=BG)
+            d.text((130, 54), f"{SPEED} 倍速再生(録画は等速)  MuJoCo(変形体の布 + 2 本指){arm}", fill=DIM, font=font(17))
             label = f"{SPEED} 倍速"
             f = font(36, bold=True)
             tw = d.textlength(label, font=f)
@@ -305,9 +372,28 @@ def compose_frame(src: Image.Image) -> Image.Image:
     return img
 
 
+def video_frames(path: Path, step: int):
+    """MP4 を 10 fps のフレームとして読み、step 枚おきに返す(2 なら 2 倍速)。"""
+    cmd = ["ffmpeg", "-loglevel", "error", "-i", str(path), "-vf", f"fps={FPS_IN},scale={W}:{H}",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    assert proc.stdout is not None
+    i = 0
+    while True:
+        raw = proc.stdout.read(W * H * 3)
+        if len(raw) < W * H * 3:
+            break
+        if i % step == 0:
+            yield Image.frombytes("RGB", (W, H), raw)
+        i += 1
+    proc.wait()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--frames", default="runs/dora/frames")
+    ap.add_argument("--run-video", default=None, help="フレームの代わりに実行の録画(MP4、1920x1080)を使う")
+    ap.add_argument("--arm", choices=["procedural", "policy"], default="procedural", help="録画のアームの種類(スライドの文言が変わる)")
     ap.add_argument("--log", default="runs/dora/log.jsonl")
     ap.add_argument("--summary", default="runs/mj4/summary.json")
     ap.add_argument("--metrics", default="models/metrics.json")
@@ -318,31 +404,39 @@ def main() -> None:
     ap.add_argument("--slides-dir", default="runs/submission/slides")
     args = ap.parse_args()
 
-    global SEED, SPEED
+    global SEED, SPEED, ARM, SUMMARY
     SEED = args.seed
     SPEED = args.run_speed
-    frames = sorted(Path(args.frames).glob("*.png"))[::max(1, args.run_speed)]
-    if not frames:
-        raise SystemExit(f"フレームがありません: {args.frames}(先に ./run_dora.sh を実行)")
+    ARM = args.arm
+    # 1920x1080 のフレームは 1 枚 6 MB あるので、全部をメモリに載せずに 1 枚ずつ流す
+    if args.run_video:
+        frames = video_frames(Path(args.run_video), max(1, args.run_speed))
+    else:
+        paths = sorted(Path(args.frames).glob("*.png"))[::max(1, args.run_speed)]
+        if not paths:
+            raise SystemExit(f"フレームがありません: {args.frames}(先に ./run_dora.sh を実行)")
+        frames = (Image.open(p) for p in paths)
     summary = json.loads(Path(args.summary).read_text())
+    SUMMARY = summary
     log = [json.loads(line) for line in Path(args.log).read_text().splitlines() if line.strip()]
     metrics = json.loads(Path(args.metrics).read_text()) if Path(args.metrics).exists() else None
 
     slides: list[tuple[str, Image.Image, float]] = [
-        ("01_title", slide_title(), 5.0),
-        ("02_task", slide_task(Path(args.fig)), 8.0),
-        ("03_system", slide_system(), 11.0),
-        ("04_ai", slide_ai(metrics), 8.0),
+        ("01_title", slide_title(), 4.0),
+        ("02_task", slide_task(Path(args.fig)), 6.0),
+        ("03_system", slide_system(), 8.0),
+        ("04_ai", slide_ai(metrics), 6.0),
     ]
+    if ARM == "policy":
+        slides.append(("05_policy", slide_policy(), 11.0))
     outro: list[tuple[str, Image.Image, float]] = [
-        ("06_results", slide_results(summary, log), 9.0),
-        ("07_next", slide_next(), 9.0),
+        ("07_results", slide_results(summary, log), 8.0),
+        ("08_next", slide_next(), 10.0),
     ]
     slides_dir = Path(args.slides_dir)
     slides_dir.mkdir(parents=True, exist_ok=True)
     for name, im, _ in slides + outro:
         im.save(slides_dir / f"{name}.png")
-    compose_frame(Image.open(frames[0])).save(slides_dir / "05_run_sample.png")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -365,8 +459,11 @@ def main() -> None:
 
     for _, im, sec in slides:
         emit(im, sec)
-    for p in frames:
-        emit(compose_frame(Image.open(p)), 1.0 / FPS_IN)
+    for i, fr in enumerate(frames):
+        im = compose_frame(fr)
+        if i == 300:
+            im.save(slides_dir / "06_run_sample.png")
+        emit(im, 1.0 / FPS_IN)
     for _, im, sec in outro:
         emit(im, sec)
     proc.stdin.close()

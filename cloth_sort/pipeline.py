@@ -171,7 +171,8 @@ def run(seed: int, n_pieces: int, out: Path | None, weights: Path | None = None,
     ov.status = "完了"
     ov.phase = "-"
     ov.current_label, ov.current_conf, ov.current_dest, ov.reason = "", 0.0, "", ""
-    correct = sum(1 for r in records if r["event"] == "place" and r.get("verified"))
+    correct = sum(1 for r in records if r["event"] == "place" and r["dest"] == "slot"
+                  and r["phase"] == "done" and r.get("verified"))
     ov.log.append(f"置き場へ {ov.done} 枚(検証 OK {correct})、要確認 {ov.review} 枚、所要 {world.time_s:.0f} s")
     # 退避
     park = arm.park if hasattr(arm, "park") else (lambda dt: arm.move_to(HOME, 1.0, dt))
