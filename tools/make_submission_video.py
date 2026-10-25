@@ -389,11 +389,56 @@ def video_frames(path: Path, step: int):
     proc.wait()
 
 
+def rss_frames(path: Path, results: list[dict], speed: int):
+    """RoboSimStudio(Newton の VBD 布)で布をつまんで運んだ録画を、説明つきの 1920x1080 にして返す。"""
+    cw, ch = 1280, 720
+    cmd = ["ffmpeg", "-loglevel", "error", "-i", str(path), "-vf", f"fps={FPS_IN},scale={cw}:{ch}",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    assert proc.stdout is not None
+    base, d = new_canvas()
+    d.text((60, 40), "取り組みの途中で公開された RoboSimStudio でも試した", fill=FG, font=font(46, bold=True))
+    d.text((60, 110), "UC Berkeley と NVIDIA が 2026 年 10 月に公開(Apache-2.0)。物理は NVIDIA の Newton、布は VBD で計算",
+           fill=DIM, font=font(26))
+    x0 = 60 + cw + 40
+    lines = ["本体と同じ 5 cm 角の布・Panda・速度で、つまむ → 運ぶ → 放す",
+             "布を指に固定しない。指の摩擦だけで持つ",
+             "Colab の T4(GPU)で実行。GPU が無いと布をつまめない"]
+    for bend, label in ((0.5, "やや柔らかい布"), (0.05, "柔らかい布")):
+        rows = [r for r in results if r.get("bend") == bend]
+        if rows:
+            ok = sum(r["success"] for r in rows)
+            lines.append(f"{label}: {ok} / {len(rows)} 回成功")
+    lines.append("柔らかいほど垂れて本物らしいが、指から抜けやすい")
+    bullets(d, lines, x0, 190, W - x0 - 40, size=26, gap=14)
+    d.text((60, 190 + ch + 20), "スクリプト: experiments/robosimstudio/cloth_pinch.py", fill=DIM, font=font(24))
+    d.rectangle([0, H - 60, W, H], fill=BG)  # 下の帯は MuJoCo の文言なので、この場面用に書き換える
+    d.text((60, H - 50), f"PAI最終課題_{ACCOUNT}   {speed} 倍速再生   RoboSimStudio(Newton)シミュレーション", fill=DIM, font=font(22))
+    label = f"{speed} 倍速"
+    f = font(36, bold=True)
+    tw = d.textlength(label, font=f)
+    d.rectangle([W - tw - 70, 16, W - 20, 70], fill=(200, 60, 40))
+    d.text((W - tw - 45, 22), label, fill=(255, 255, 255), font=f)
+    i = 0
+    while True:
+        raw = proc.stdout.read(cw * ch * 3)
+        if len(raw) < cw * ch * 3:
+            break
+        if i % speed == 0:
+            im = base.copy()
+            im.paste(Image.frombytes("RGB", (cw, ch), raw), (60, 170))
+            yield im
+        i += 1
+    proc.wait()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--frames", default="runs/dora/frames")
     ap.add_argument("--run-video", default=None, help="フレームの代わりに実行の録画(MP4、1920x1080)を使う")
     ap.add_argument("--arm", choices=["procedural", "policy"], default="procedural", help="録画のアームの種類(スライドの文言が変わる)")
+    ap.add_argument("--rss-video", default=None, help="RoboSimStudio で布をつまんで運んだ録画(1280x720)")
+    ap.add_argument("--rss-results", default=None, help="その評価結果(cloth_pinch.py の results.jsonl)")
     ap.add_argument("--log", default="runs/dora/log.jsonl")
     ap.add_argument("--summary", default="runs/mj4/summary.json")
     ap.add_argument("--metrics", default="models/metrics.json")
@@ -423,15 +468,15 @@ def main() -> None:
 
     slides: list[tuple[str, Image.Image, float]] = [
         ("01_title", slide_title(), 4.0),
-        ("02_task", slide_task(Path(args.fig)), 6.0),
+        ("02_task", slide_task(Path(args.fig)), 5.0),
         ("03_system", slide_system(), 8.0),
         ("04_ai", slide_ai(metrics), 6.0),
     ]
     if ARM == "policy":
-        slides.append(("05_policy", slide_policy(), 11.0))
+        slides.append(("05_policy", slide_policy(), 10.0))
     outro: list[tuple[str, Image.Image, float]] = [
-        ("07_results", slide_results(summary, log), 8.0),
-        ("08_next", slide_next(), 10.0),
+        ("07_results", slide_results(summary, log), 7.0),
+        ("09_next", slide_next(), 9.0),
     ]
     slides_dir = Path(args.slides_dir)
     slides_dir.mkdir(parents=True, exist_ok=True)
@@ -464,7 +509,13 @@ def main() -> None:
         if i == 300:
             im.save(slides_dir / "06_run_sample.png")
         emit(im, 1.0 / FPS_IN)
-    for _, im, sec in outro:
+    for name, im, sec in outro:
+        if name == "09_next" and args.rss_video:
+            rss_results = [json.loads(line) for line in Path(args.rss_results).read_text().splitlines() if line.strip()]
+            for i, fr in enumerate(rss_frames(Path(args.rss_video), rss_results, SPEED or 2)):
+                if i == 30:
+                    fr.save(slides_dir / "08_robosimstudio.png")
+                emit(fr, 1.0 / FPS_IN)
         emit(im, sec)
     proc.stdin.close()
     proc.wait()
