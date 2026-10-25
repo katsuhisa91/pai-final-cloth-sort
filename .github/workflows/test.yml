@@ -1,3 +1,4 @@
+# push と PR のたびに pytest を回す。
 # MuJoCo の物理・IK・布のつまみ上げのテストは描画なしで動くので、GPU もディスプレイも要らない
 name: test
 

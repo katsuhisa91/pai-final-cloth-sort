@@ -7,6 +7,7 @@
 
 構成: タイトル → 課題 → 仕組み → AI ①番号読み取り → AI ②アームの動き(模倣学習) → 実行の様子 → 結果 → 工夫・講座との対応・次の一歩。
 実行の様子は MuJoCo で描画した 1920x1080 のフレーム(--frames の PNG か、--run-video の MP4)をそのまま使う。
+氏名・所属・メールアドレスは入れない(omnicampus のアカウント名のみ)。
 """
 
 from __future__ import annotations
@@ -166,6 +167,7 @@ def slide_system() -> Image.Image:
         x += bw + gap
 
     y2 = top + 230
+    d.text((80, y2), "dora-rs の dataflow として 3 プロセスで実行(yaml でノードをつなぐ + Python スクリプト + Arrow)",
            fill=FG, font=font(30, bold=True))
     y3 = y2 + 70
     box(d, (160, y3, 620, y3 + 170), "sim(ロボット側)", "MuJoCo の世界・カメラ・Panda。画像と結果を送る", outline=OK)
@@ -236,6 +238,7 @@ def slide_policy() -> Image.Image:
         d.text((x0 + 30, by + 4), line, fill=DIM, font=font(23))
         by += 34
 
+    d.text((90, 900), "評価は loss ではなく、固定シードのシミュレータでの成功率で測った。モデルとデータは Hugging Face Hub に置いた",
            fill=DIM, font=font(26))
     return img
 
@@ -311,6 +314,9 @@ def slide_next() -> Image.Image:
             "方策の失敗を 1 件ずつ再現して分解し、学習のやり直しでなく実行器の修正で 14 → 19 / 20",
         ]),
         ("講座の学びの使い方", OK, [
+            "AI 画像認識 + ルールのアーム制御から始め、タスクの前提条件を先に決めた",
+            "MLOps: 固定シードで成功率を評価、データとモデルは HF Hub、GitHub Actions でテスト",
+            "ミドルウェアと OSS: dora-rs の dataflow、MuJoCo、LeRobot。Apache-2.0 で公開",
         ]),
         ("次の一歩", WARN, [
             "布は折れたまま落ちる。敷く置き方を教師に足したが、方策は 8 / 20 止まり。ここを伸ばす",
