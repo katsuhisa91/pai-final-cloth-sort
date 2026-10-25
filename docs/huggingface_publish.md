@@ -1,8 +1,7 @@
 # Hugging Face のモデル・データセットを公開する手順
 
-学習済みの ACT とデモのデータセットは Hugging Face Hub に private で置いてある。公開すると、他の人が
-再学習(1 時間半〜2 時間)なしで `--policy katsuhisa91/pai-cloth-sort-act` のように試せる。
-コードの再現や課題の採点には必須ではないので、公開は提出後でもよい。
+学習済みの ACT とデモのデータセットは Hugging Face Hub に置き、2026-10-25 に公開した。他の人も再学習(1 時間半〜2 時間)なしで
+`--policy katsuhisa91/pai-cloth-sort-act` のように試せる。以下は公開したときの手順の記録。
 
 | 種類 | リポジトリ | 中身 |
 |---|---|---|
@@ -64,5 +63,5 @@ HF_TOKEN= .venv-il/bin/python -c "from lerobot.datasets.lerobot_dataset import L
 
 ## 4. 公開した後
 
-- README の「Hugging Face に上げる場合」節の「(2026-10-17 時点で private)」と、「private の間はアクセス権のあるトークンでログインしておく」の注記を消す
+- README の Hugging Face の節を、公開済みの書き方に直した(2026-10-25)
 - 非公開に戻すのは同じ手順で `private=True`(ブラウザなら Make private)。ただし公開中にダウンロードされたものは取り消せない
