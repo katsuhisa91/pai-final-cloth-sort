@@ -126,7 +126,7 @@ def slide_title() -> Image.Image:
 
 def slide_task(fig: Path | None) -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, "課題: 布片を番号どおりの置き場へ置く")
+    y = heading(d, "布片を番号どおりの置き場へ置く")
     items = [
         "作業台の左に散らばった布片を、右の番号付き置き場へ 1 枚ずつ運ぶ",
         "読めない・自信がない布片は止めずに「要確認トレイ」へ逃がす",
@@ -148,7 +148,7 @@ def slide_task(fig: Path | None) -> Image.Image:
 
 def slide_system() -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, "仕組み: 撮影 → 検出 → 読み取り → 計画 → 搬送 → 検証")
+    y = heading(d, "仕組み 撮影 → 検出 → 読み取り → 計画 → 搬送 → 検証")
     steps = [
         ("俯瞰カメラ", "1 px = 1 mm"),
         ("背景差分で検出", "布の色に依らない"),
@@ -185,7 +185,7 @@ def slide_system() -> Image.Image:
 
 def slide_ai(metrics: dict | None) -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, "AI ①: 手書き番号を読む CNN を自前で学習")
+    y = heading(d, "AI ① 手書き番号を読む CNN を自前で学習")
     n_train = metrics["n_train"] if metrics else 8800
     params = metrics["params"] if metrics else 468139
     heldout = metrics["heldout"]["accuracy"] if metrics else 0.846
@@ -206,7 +206,7 @@ def slide_ai(metrics: dict | None) -> Image.Image:
 
 def slide_policy() -> Image.Image:
     img, d = new_canvas()
-    y = heading(d, "AI ②: アームの動きを模倣学習(LeRobot の ACT)")
+    y = heading(d, "AI ② アームの動きを模倣学習(LeRobot の ACT)")
     bullets(d, [
         "教師: 手で作った把持の手順(状態機械 + IK)。これでデモを 154 本集め、成功 123 本・5.1 万フレームを LeRobot 形式で保存",
         "入力: 俯瞰カメラ + 手首カメラの画像、手先位置、目標(つまむ点・置く点)。出力: 手先の目標位置と指の開閉(20 Hz、5 秒先まで)",

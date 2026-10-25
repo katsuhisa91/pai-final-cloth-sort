@@ -30,7 +30,7 @@
 
 ### コマンドで行う場合
 
-`hf auth login` 済み(書き込み権限のあるトークン)の `.venv-il` で:
+`hf auth login`(書き込み権限のあるトークン)を済ませた `.venv-il` で、次を実行する。
 
 ```sh
 .venv-il/bin/python - <<'PY'
