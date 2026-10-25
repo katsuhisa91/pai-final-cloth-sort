@@ -39,33 +39,25 @@ CARRY_SPEED = 0.06  # [m/s]。本体と同じ
 RELEASE_Z = 0.03  # 放す高さ(机から)[m]
 HOLD_RADIUS = 0.020  # ツール中心からこの距離にある粒子を「つまんでいる」とみなす [m]
 
-# フェルトに近い布: 厚さ 3 mm、300 g/m^2。RoboSimStudio のタオル(5 mm、500 g/m^2)を元に、
-# towel デモと同じく芯のせん断を下げて垂れるようにした
+# フェルトに近い布: 厚さ 3 mm、300 g/m^2。膜(membrane)で作る。厚みを持つ板(slab)にすると、
+# Panda の指(メッシュ + 符号付き距離場)が布をすり抜けて押しても動かなかった(YAM の指なら当たる)
 FELT = rss.replace(
-    rss.materials.TERRY_TOWELLING,
+    rss.materials.TERRY_MEMBRANE,
     thickness=0.003,
     areal_density=0.3,
-    core_shear_modulus=3.0e3,
-    edge_ke=1.0,
-    edge_kd=1.0e-2,
-    particle_radius=0.00075,
+    particle_radius=0.0015,  # 膜の慣例で厚さの半分。接触の厚みは 3 mm
 )
 
 
 def build(center_xy, yaw):
     cuda = wp.is_cuda_available()
+    # 標準の設定に、指の摩擦で布をつまむための 2 つ(片方向の連成、面全体の接触)だけを足す。
+    # towel デモのようにソルバーの設定を上書きすると、指と布の接触が効かなくなった
     physics = rss.replace(
         rss.GENERIC,
-        control_hz=60.0,
-        substeps=10,
-        backends=(
-            ("articulated", rss.backend("mujoco", nconmax=2048, njmax=2048)),
-            ("cloth", rss.backend("vbd", iterations=10, particle_self_contact_radius=0.0015,
-                                  particle_self_contact_margin=0.002)),
-        ),
         coupling=rss.coupler("one_way"),
         # Panda の当たり判定はメッシュなので、布の面との接触には符号付き距離場(CUDA のみ)が要る
-        collision=rss.CollisionSpec(soft_contact_margin=0.006, full_surface_contact=True, force_sdf=cuda),
+        collision=rss.CollisionSpec(full_surface_contact=True, force_sdf=cuda),
     )
     scene = rss.Scene(cell=CELL, physics=physics, name="cloth_pinch")
     scene.add(rss.robot("panda"))
@@ -238,7 +230,15 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
         r.glide(grasp + np.array([0, 0, 0.10]), quat, 0.25)
         tip_off = r.tool()[0][2] - finger_bottom(sim)  # ツール中心から指先までの高さ
         grasp[2] = surface + tip_off + 0.001
-        miss = r.glide(grasp, quat, 0.05)
+        r.glide(grasp, quat, 0.05)
+        # 腕は目標の 3〜4 mm 手前で止まり、指が厚さ 3 mm の布の上で浮く。指先の実際の高さを測って追い込む
+        for _ in range(3):
+            gap = finger_bottom(sim) - (surface + 0.0005)
+            if abs(gap) < 0.0008:
+                break
+            grasp[2] -= gap
+            r.glide(grasp, quat, 0.02, settle=1.5, tol=0.001)
+        miss = finger_bottom(sim) - surface  # 指先と机の隙間 [m]
         r.grip(squeeze)
         r.wait(0.2)
         r.glide(grasp + np.array([0, 0, SQUEEZE_RISE]), quat, 0.01)
@@ -264,7 +264,7 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
         end = r.q()
         target = world_center[:2] + np.array([0.0, CARRY])
         res = {
-            "seed": seed, "grip": squeeze, "yaw": yaw, "reach_miss_mm": 1000 * miss,
+            "seed": seed, "grip": squeeze, "yaw": yaw, "fingertip_gap_mm": 1000 * miss,
             "pinched_particles": int(len(pinched)), "lift_m": lifted, "held_at_top": held_top,
             "carried": carried,
             "landed_offset_mm": float(1000 * np.linalg.norm(end[:, :2].mean(axis=0) - target)),
