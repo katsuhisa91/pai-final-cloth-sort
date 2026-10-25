@@ -46,6 +46,9 @@ FELT = rss.replace(
     thickness=0.003,
     areal_density=0.3,
     particle_radius=0.0015,  # 膜の慣例で厚さの半分。接触の厚みは 3 mm
+    # 曲げの減衰。元の 1e-4 だと、腕が動くたびに布が風に吹かれたように揺れ続けた(この世界に空気抵抗はない)。
+    # RoboSimStudio の towel デモと同じ 1e-2 にした
+    edge_kd=1.0e-2,
 )
 
 
