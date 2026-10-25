@@ -30,7 +30,7 @@ SIDE = 0.05  # 布片の一辺 [m]。本体と同じ 5 cm 角
 CELLS = 10  # 一辺あたりの格子数(5 mm 格子)
 CENTER = (0.0, 0.0)  # 布の中心(作業面の座標)[m]
 EDGE_IN = 0.006  # つまむとき、ツール中心を布の縁から内側へ寄せる量 [m]。外側の指は机、内側の指は布に載る
-SQUEEZE = 0.95  # 握りの強さ(0〜1)。1.0 だと指同士が布を突き抜ける(RoboSimStudio の towel デモと同じ値)
+SQUEEZE = 0.95  # 握りの強さ(0〜1)。--grip で変える。Panda では 0.95 で指の隙間 5 mm(垂れた裾 4 mm 用の値)
 SQUEEZE_RISE = 0.003  # 握りながら上げる量 [m]
 LIFT = 0.03  # 持ち上げる高さ [m]
 LIFT_SPEED = 0.03  # [m/s]。本体と同じ
@@ -209,7 +209,7 @@ def hull_area(xy):
     return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
 
 
-def trial(seed, port, video_dir=None):
+def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
     rng = np.random.default_rng(seed)
     center = np.array(CENTER) + rng.uniform(-0.02, 0.02, 2)
     yaw = float(rng.uniform(-0.3, 0.3))
@@ -239,7 +239,7 @@ def trial(seed, port, video_dir=None):
         tip_off = r.tool()[0][2] - finger_bottom(sim)  # ツール中心から指先までの高さ
         grasp[2] = surface + tip_off + 0.001
         miss = r.glide(grasp, quat, 0.05)
-        r.grip(SQUEEZE)
+        r.grip(squeeze)
         r.wait(0.2)
         r.glide(grasp + np.array([0, 0, SQUEEZE_RISE]), quat, 0.01)
         r.wait(1.0)
@@ -264,7 +264,7 @@ def trial(seed, port, video_dir=None):
         end = r.q()
         target = world_center[:2] + np.array([0.0, CARRY])
         res = {
-            "seed": seed, "yaw": yaw, "reach_miss_mm": 1000 * miss,
+            "seed": seed, "grip": squeeze, "yaw": yaw, "reach_miss_mm": 1000 * miss,
             "pinched_particles": int(len(pinched)), "lift_m": lifted, "held_at_top": held_top,
             "carried": carried,
             "landed_offset_mm": float(1000 * np.linalg.norm(end[:, :2].mean(axis=0) - target)),
@@ -275,7 +275,7 @@ def trial(seed, port, video_dir=None):
         }
         res["success"] = bool(carried and res["landed_offset_mm"] < 50.0)
         if video_dir is not None and r.frames:
-            write_mp4(r.frames, Path(video_dir) / f"pinch_{seed:03d}.mp4", fps=round(r.hz / 2))
+            write_mp4(r.frames, Path(video_dir) / f"pinch_g{squeeze:.2f}_{seed:03d}.mp4", fps=round(r.hz / 2))
         return res
     finally:
         session.teardown()
@@ -299,19 +299,21 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--video", type=int, default=2, help="最初の何試行を動画にするか")
     ap.add_argument("--out", default="out/pinch")
+    ap.add_argument("--grip", type=float, nargs="+", default=[SQUEEZE], help="握りの強さ(複数で振る)")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     print(f"[device] cuda={wp.is_cuda_available()}", flush=True)
     results = []
-    for k in range(args.trials):
-        seed = args.seed + k
-        res = trial(seed, 9700 + k, out if k < args.video else None)
-        print(json.dumps(res), flush=True)
-        results.append(res)
-        (out / "results.jsonl").write_text("\n".join(json.dumps(x) for x in results) + "\n")
-    ok = sum(x["success"] for x in results)
-    print(f"[summary] success {ok}/{len(results)}", flush=True)
+    for g in args.grip:
+        for k in range(args.trials):
+            seed = args.seed + k
+            res = trial(seed, 9700 + len(results), out if k < args.video else None, squeeze=g)
+            print(json.dumps(res), flush=True)
+            results.append(res)
+            (out / "results.jsonl").write_text("\n".join(json.dumps(x) for x in results) + "\n")
+        ok = sum(x["success"] for x in results if x["grip"] == g)
+        print(f"[summary] grip {g:.2f}: success {ok}/{args.trials}", flush=True)
 
 
 if __name__ == "__main__":
