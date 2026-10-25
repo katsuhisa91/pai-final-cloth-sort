@@ -188,6 +188,8 @@ VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にして�
 - モデル: <https://huggingface.co/katsuhisa91/pai-cloth-sort-act> (ACT v1、評価 20 場面で 19/20 を出した実行器の既定と同じ設定で読める)
 - データセット: <https://huggingface.co/datasets/katsuhisa91/cloth_pickplace> (123 本)、<https://huggingface.co/datasets/katsuhisa91/cloth_pickplace_v3> (452 本、DART 込み、相対状態 12 次元)
 
+`--policy katsuhisa91/pai-cloth-sort-act`、`--dataset.repo_id=katsuhisa91/cloth_pickplace`(`--dataset.root` なし)で参照できます(ログインやトークンは不要)。
+
 上げ直すときは、`hf auth login` を済ませてから次を実行します。
 
 ```sh
@@ -197,8 +199,6 @@ VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にして�
 .venv-il/bin/python -c "from lerobot.datasets.lerobot_dataset import LeRobotDataset; \
   LeRobotDataset('katsuhisa91/cloth_pickplace', root='data/cloth_pickplace').push_to_hub()"
 ```
-
-そのまま `--policy katsuhisa91/pai-cloth-sort-act`、`--dataset.repo_id=katsuhisa91/cloth_pickplace`(`--dataset.root` なし)で参照できます(ログインやトークンは不要)。
 
 ### 公開されているロボットデータとの関係
 
