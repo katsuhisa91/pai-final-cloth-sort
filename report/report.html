@@ -151,8 +151,22 @@ Panda の pick &amp; place(状態機械: 接近 → 降下 → つまむ(1.5 s) 
 教師が手続きなので、模倣学習の上限は教師の成功率です。公開されている布操作の実機データ(ALOHA のタオルたたみ、Unitree H1 の衣類たたみ、
 SO-101 のタオルたたみなど)はロボットもカメラも違うため直接の学習データにはならず、使うならそれらで事前学習された VLA を土台に本データで微調整する形になります。</p>
 
+<h3>4.7 取り組みの途中で公開された RoboSimStudio でも試す</h3>
+<p>課題に取り組んでいる途中の 2026 年 10 月に、UC Berkeley と NVIDIA が RoboSimStudio(Apache-2.0。物理は NVIDIA の Newton、布は VBD)を公開しました。
+布の物理を MuJoCo flex より細かく扱えるので、本体と同じ「5 cm 角の布を Panda の 2 本指でつまみ、3 cm/s で 3 cm 持ち上げ、6 cm/s で 15 cm 運んで放す」を、布を指に固定せず摩擦だけで持たせて動かしました。
+GPU が要るため、Google Colab の T4 を Colab CLI から借りました(<code>experiments/robosimstudio/</code>)。</p>
+<table>
+<tr><th>布(曲げの硬さ)</th><th>成功(目標 ±50 mm)</th><th>置いた位置のずれ</th><th>置いた後の面積(元を 1)</th></tr>
+<tr><td>やや柔らかい(0.5)</td><td>10 / 10</td><td>6〜28 mm</td><td>ほぼ 1.0(平らなまま)</td></tr>
+<tr><td>柔らかい(0.05)</td><td>5 / 5</td><td>25〜40 mm</td><td>0.53〜0.69(折れて着地)</td></tr>
+</table>
+<p>柔らかい布は指から垂れて運ばれ、置くと折れ曲がって着地しました(動画の終盤に 2 倍速で入れた場面)。
+本体の手続き的な把持は 20 場面中 12 回で、主な失敗は搬送中の落下でした。この条件では Newton の布のほうが指から抜けにくい結果です。ただ布の作り方(本体は 9×9 格子のフェルト、こちらは 11×11 の膜)や摩擦が違うので、成功率はそのまま比べられません。</p>
+<p>動かすまでに 4 か所で詰まりました。CPU では布が別の計算(SuperDex)に切り替わり、公式のタオルのテストでも摘めない。Panda の指は厚みのある板として作った布をすり抜け、膜にすると当たる。腕が目標の 3〜4 mm 手前で止まるので、指先の高さを測って机まで追い込む必要がある。
+膜の既定の曲げ減衰では、空気抵抗の無い世界で布が風に吹かれたように揺れ続けたため、公式デモと同じ値に上げた。本体を Newton に載せ替えるところまではしていません。</p>
+
 <h2>5. 動画について</h2>
-<p>2 分 54 秒。前半は課題・仕組み・AI ①(番号読み取りの CNN)・AI ②(アームの動きの模倣学習と、20 場面での評価)の説明スライド、中盤が MuJoCo の実行、最後に結果と「工夫した点・講座の学びの使い方・次の一歩」です。
+<p>2 分 57 秒。前半は課題・仕組み・AI ①(番号読み取りの CNN)・AI ②(アームの動きの模倣学習と、20 場面での評価)の説明スライド、中盤が MuJoCo の実行、終盤が結果と RoboSimStudio で試した場面(4.7 節)、最後に「工夫した点・講座の学びの使い方・次の一歩」です。
 中盤の実行は、<b>アームを学習した方策(ACT)で動かした</b>仕分けの録画です(seed 4、8 枚。改善後の実行器。4.5 節の 7/8 の回。単一プロセス版で、同じ部品は dora の 3 ノードでも動く)。
 <b>実行部分は 2 倍速</b>で、画面右上とスライドに明記しています(布が抜けないよう持ち上げ 3 cm/s・搬送 6 cm/s で動かすため、等速だと 8 枚で約 4 分かかります)。
 実行部分は左が 3D 視点、左下が手首カメラ(方策の入力の 1 つ)、右上が俯瞰カメラと検出枠、右下が状態パネルで、各工程の判断理由を出しています。
@@ -194,7 +208,7 @@ uv venv .venv-il --python 3.12 &amp;&amp; uv pip install --python .venv-il/bin/p
 .venv-il/bin/python -m cloth_sort.learning.train --dataset $PWD/data/cloth_pickplace --out $PWD/runs/train/act
 .venv-il/bin/python -m cloth_sort.learning.evaluate --policy runs/train/act/checkpoints/020000/pretrained_model --episodes 20
 </pre>
-<p>使用 OSS: MuJoCo 3(Apache-2.0)、mujoco_menagerie の Franka Panda モデル(Apache-2.0)、dora-rs(Apache-2.0)、LeRobot(Apache-2.0)、PyTorch(BSD-3)、NumPy、Pillow、Apache Arrow、ffmpeg。コードは Apache-2.0 で GitHub に公開(リポジトリ URL は Omnicampus の提出欄に記載)。</p>
+<p>使用 OSS: MuJoCo 3(Apache-2.0)、mujoco_menagerie の Franka Panda モデル(Apache-2.0)、dora-rs(Apache-2.0)、LeRobot(Apache-2.0)、PyTorch(BSD-3)、NumPy、Pillow、Apache Arrow、ffmpeg、RoboSimStudio と Newton(Apache-2.0、4.7 節の実験のみ)。コードは Apache-2.0 で GitHub に公開(リポジトリ URL は Omnicampus の提出欄に記載)。</p>
 
 </body>
 </html>

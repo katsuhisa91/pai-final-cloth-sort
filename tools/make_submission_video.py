@@ -409,13 +409,15 @@ def rss_frames(path: Path, results: list[dict], speed: int):
     x0 = 60 + cw + 40
     lines = ["本体と同じ 5 cm 角の布・Panda・速度で、つまむ → 運ぶ → 放す",
              "布を指に固定しない。指の摩擦だけで持つ",
+             "Pandaの指は厚みのある布をすり抜けたので、布は膜として作った",
              "Colab の T4(GPU)で実行。GPU が無いと布をつまめない"]
     for bend, label in ((0.5, "やや柔らかい布"), (0.05, "柔らかい布")):
         rows = [r for r in results if r.get("bend") == bend]
         if rows:
             ok = sum(r["success"] for r in rows)
             lines.append(f"{label}: {ok} / {len(rows)} 回成功")
-    lines.append("柔らかいほど垂れて本物らしいが、指から抜けやすい")
+    lines.append("柔らかい布は指から垂れ、置くと折れて着地する(映像はこちら)")
+    lines.append("揺れを止める減衰を足さないと、空気抵抗の無い世界で布が風に吹かれたように揺れ続けた")
     bullets(d, lines, x0, 190, W - x0 - 40, size=26, gap=14)
     d.text((60, 190 + ch + 20), "スクリプト: experiments/robosimstudio/cloth_pinch.py", fill=DIM, font=font(24))
     d.rectangle([0, H - 60, W, H], fill=BG)  # 下の帯は MuJoCo の文言なので、この場面用に書き換える

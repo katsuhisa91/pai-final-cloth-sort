@@ -5,7 +5,7 @@
 dora-rs の dataflow としてつなぎ、MuJoCo の物理シミュレーション上で Franka Panda を動かしています。
 布は変形体(MuJoCo の flex)で、2 本指ハンド(ゴムパッド付き)でつまむ把持そのものを物理に任せています。
 
-- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(2 分 54 秒、1920x1080。説明スライド + 学習した方策(ACT)でアームを動かした仕分けの実行(単一プロセス版、2 倍速、画面に明記))
+- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(2 分 57 秒、1920x1080。説明スライド + 学習した方策(ACT)でアームを動かした仕分けの実行(単一プロセス版、2 倍速、画面に明記)+ RoboSimStudio で布をつまんだ場面)
 - 実行部分のみ: `runs/cloth8/cloth_sort.mp4`(単一プロセス版、seed 4、等速)。学習した方策で同じ場面を回した動画は `runs/cloth8_act/cloth_sort.mp4`。dora 版の実行は `./run_dora.sh` で `runs/dora/frames` に出る(同じ seed で搬送中の落下が 4 枚。把持の成否は物理の微小な差で変わる)
 - 報告書: `report/report.pdf`(元は `report/report.html`)
 - 実機は未接続。アームは `RobotArm` インターフェースの MuJoCo 実装(`GripperArm`)で、実機対応はこの 1 クラスを足す形
@@ -33,7 +33,8 @@ export PYTHONPATH=$PWD
 
 # 4. 提出用の動画(スライド + 学習した方策での実行の録画、実行部分は 2 倍速)を作る
 .venv/bin/python tools/make_submission_video.py --run-video runs/cloth8_act2/cloth_sort.mp4 --log runs/cloth8_act2/log.jsonl \
-  --summary runs/cloth8_act2/summary.json --fig runs/cloth8/top_detect.png --run-speed 2 --arm policy
+  --summary runs/cloth8_act2/summary.json --fig runs/cloth8/top_detect.png --run-speed 2 --arm policy \
+  --rss-video experiments/robosimstudio/results/pinch_soft.mp4 --rss-results experiments/robosimstudio/results/results.jsonl
 
 # テスト
 .venv/bin/python -m pytest -q
@@ -244,6 +245,31 @@ VENV=.venv-il ./run_dora.sh      # dataflow.yml の ARM を "policy" にして�
 
 Genesis は GPU(CUDA)前提の設計で、この環境では比較実験に使える速度ではありませんでした。
 布の物理の忠実度を上げる現実的な道は、MuJoCo flex の格子を細かくし自己接触を入れる(計算は数倍遅くなる)か、CUDA のある機械で Genesis / Isaac Lab を使うことです。
+
+### 取り組みの途中で公開された RoboSimStudio で試した結果
+
+課題に取り組んでいる途中の 2026 年 10 月に、UC Berkeley と NVIDIA が RoboSimStudio(Apache-2.0、物理は NVIDIA の Newton、布は VBD)を公開しました。
+布の物理を MuJoCo flex より細かく扱えるので、本体と同じ「5 cm 角の布を Panda の 2 本指でつまみ、3 cm/s で 3 cm 持ち上げ、6 cm/s で 15 cm 運んで、机から 3 cm の高さで放す」をそのまま動かしてみました。
+布は指に固定せず、指の摩擦だけで持たせています。スクリプトは `experiments/robosimstudio/cloth_pinch.py`、結果は `experiments/robosimstudio/results/`(`results.jsonl` と動画 2 本)。
+Google Colab の T4 を Colab CLI から借りて動かしました。
+
+| 布(曲げの硬さ edge_ke) | 成功 | 持ち上げた布の垂れ(ツール中心から) | 指の近くに残った布 | 置いた位置のずれ | 置いた後の面積(元を 1) |
+|---|---|---|---|---|---|
+| やや柔らかい(0.5) | 10 / 10 | 主に 34 mm | 73〜100% | 6〜28 mm | ほぼ 1.0(平らなまま) |
+| 柔らかい(0.05) | 5 / 5 | 23〜29 mm | 96〜100% | 25〜40 mm | 0.53〜0.69(折れて着地) |
+
+柔らかい布は指から垂れて運ばれ、置くと折れ曲がって着地しました。本体の MuJoCo flex でも布は折れて落ちるので、振る舞いの向きは同じです。
+成功の基準は本体と同じく「目標の ±50 mm に置けた」で、両方とも全回で満たしました。本体の手続き的な把持は 20 場面中 12 回(主な失敗は搬送中の落下)だったので、この条件では Newton の布のほうが指から抜けにくい結果です。
+ただし本体の布は 9×9 格子のフェルト、こちらは 11×11 の膜で、摩擦や厚みの作り方が違うため、成功率をそのまま比べることはできません。
+
+動かすまでに詰まったところは 4 つありました。
+
+- GPU が要る。CPU では布が SuperDex という別の計算に切り替わり、公式の「タオルを畳む」テストでも摘んだ縁が持ち上がらなかった。T4 では公式の布摘みテスト 7 件が通った
+- Panda の指(メッシュ + 符号付き距離場)は、厚みのある板(slab)として作った布をすり抜けた。押しても 0.5 mm しか動かない。膜(membrane)として作ると当たった(押して 59 mm 動く)
+- 腕は目標の 3〜4 mm 手前で止まる。厚さ 3 mm の布では指が布の上で浮いたまま握るので、指先の実際の高さを測って机まで追い込むようにした
+- 膜の既定の曲げ減衰(1e-4)では、運んでいる布が風に吹かれたように揺れ続けた。この世界には空気抵抗がないので、RoboSimStudio の towel デモと同じ 1e-2 にした
+
+本体を Newton に載せ替えるところまではしていません。載せ替えるなら、模倣学習のデモを集め直し(GPU が要る)、置き場・検証のカメラを作り直すことになります。
 
 ### シミュレータの真値を使っている箇所(実機ではセンサに置き換えが要る)
 
