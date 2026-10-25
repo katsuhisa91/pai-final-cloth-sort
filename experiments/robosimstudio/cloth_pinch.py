@@ -49,7 +49,7 @@ FELT = rss.replace(
 )
 
 
-def build(center_xy, yaw):
+def build(center_xy, yaw, bend=None):
     cuda = wp.is_cuda_available()
     # 標準の設定に、指の摩擦で布をつまむための 2 つ(片方向の連成、面全体の接触)だけを足す。
     # towel デモのようにソルバーの設定を上書きすると、指と布の接触が効かなくなった
@@ -67,7 +67,7 @@ def build(center_xy, yaw):
         name="patch", size=(SIDE, SIDE), cells=(CELLS, CELLS),
         at=(float(corner[0]), float(corner[1]), 0.002),
         quat=(0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2)),
-        material=FELT, color=(0.80, 0.78, 0.70),
+        material=FELT if bend is None else rss.replace(FELT, edge_ke=bend), color=(0.80, 0.78, 0.70),
     ))
     return scene.build(control_mode="joint_position")
 
@@ -201,11 +201,11 @@ def hull_area(xy):
     return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
 
 
-def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
+def trial(seed, port, video_dir=None, squeeze=SQUEEZE, bend=None):
     rng = np.random.default_rng(seed)
     center = np.array(CENTER) + rng.uniform(-0.02, 0.02, 2)
     yaw = float(rng.uniform(-0.3, 0.3))
-    sim = build(center, yaw)
+    sim = build(center, yaw, bend)
     surface = float(rss.get_cell(CELL).surface_z)
     session = open_session(sim, port)
     cam = None
@@ -250,6 +250,7 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
         r.glide(top, quat, LIFT_SPEED)
         q = r.q()
         lifted = float(q[:, 2].mean() - rest[:, 2].mean())
+        hang = float(r.tool()[0][2] - q[:, 2].min())  # 持ち上げた時点で、布がツール中心からどれだけ垂れているか
         held_top = float((np.linalg.norm(q[pinched] - r.tool()[0], axis=1) < 0.025).mean()) if len(pinched) else 0.0
         # 運ぶ: 布の中心を +y 方向へ CARRY だけ動かす
         dest = top + np.array([0.0, CARRY, 0.0])
@@ -264,8 +265,8 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
         end = r.q()
         target = world_center[:2] + np.array([0.0, CARRY])
         res = {
-            "seed": seed, "grip": squeeze, "yaw": yaw, "fingertip_gap_mm": 1000 * miss,
-            "pinched_particles": int(len(pinched)), "lift_m": lifted, "held_at_top": held_top,
+            "seed": seed, "grip": squeeze, "bend": bend, "yaw": yaw, "fingertip_gap_mm": 1000 * miss,
+            "pinched_particles": int(len(pinched)), "lift_m": lifted, "hang_mm": 1000 * hang, "held_at_top": held_top,
             "carried": carried,
             "landed_offset_mm": float(1000 * np.linalg.norm(end[:, :2].mean(axis=0) - target)),
             "area_ratio": hull_area(end[:, :2]) / area0,
@@ -275,7 +276,7 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE):
         }
         res["success"] = bool(carried and res["landed_offset_mm"] < 50.0)
         if video_dir is not None and r.frames:
-            write_mp4(r.frames, Path(video_dir) / f"pinch_g{squeeze:.2f}_{seed:03d}.mp4", fps=round(r.hz / 2))
+            write_mp4(r.frames, Path(video_dir) / f"pinch_g{squeeze:.2f}_b{bend}_{seed:03d}.mp4", fps=round(r.hz / 2))
         return res
     finally:
         session.teardown()
@@ -300,20 +301,22 @@ def main():
     ap.add_argument("--video", type=int, default=2, help="最初の何試行を動画にするか")
     ap.add_argument("--out", default="out/pinch")
     ap.add_argument("--grip", type=float, nargs="+", default=[SQUEEZE], help="握りの強さ(複数で振る)")
+    ap.add_argument("--bend", type=float, nargs="+", default=[None], help="曲げ剛性 edge_ke(複数で振る。既定は TERRY_MEMBRANE の 6.6)")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     print(f"[device] cuda={wp.is_cuda_available()}", flush=True)
     results = []
-    for g in args.grip:
-        for k in range(args.trials):
-            seed = args.seed + k
-            res = trial(seed, 9700 + len(results), out if k < args.video else None, squeeze=g)
-            print(json.dumps(res), flush=True)
-            results.append(res)
-            (out / "results.jsonl").write_text("\n".join(json.dumps(x) for x in results) + "\n")
-        ok = sum(x["success"] for x in results if x["grip"] == g)
-        print(f"[summary] grip {g:.2f}: success {ok}/{args.trials}", flush=True)
+    for bend in args.bend:
+        for g in args.grip:
+            for k in range(args.trials):
+                seed = args.seed + k
+                res = trial(seed, 9700 + len(results), out if k < args.video else None, squeeze=g, bend=bend)
+                print(json.dumps(res), flush=True)
+                results.append(res)
+                (out / "results.jsonl").write_text("\n".join(json.dumps(x) for x in results) + "\n")
+            ok = sum(x["success"] for x in results if x["grip"] == g and x["bend"] == bend)
+            print(f"[summary] bend {bend} grip {g:.3f}: success {ok}/{args.trials}", flush=True)
 
 
 if __name__ == "__main__":
