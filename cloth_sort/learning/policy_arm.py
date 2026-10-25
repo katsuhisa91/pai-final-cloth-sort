@@ -118,7 +118,7 @@ class LearnedArm:
         return PolicyPickPlace(self, pick_xy, place_xy, place_name, self.place_bias_mm)
 
 
-RETRY_RADIUS_MM = 150.0   # つかみ損ねた布がこの範囲に残っていれば撮り直して再試行(手続き版の relocate と同じ発想)
+RETRY_RADIUS_MM = 150.0   # つかみ損ねた布がこの範囲に残っていれば撮り直して再試行(ルールベース版の relocate と同じ発想)
 PLACE_BIAS_MM = 22.0      # 方策が進行方向に止まり遅れる系統誤差の補正量 [mm]。評価とは別の 20 場面(seed 21000〜)で測った平均(sd 15)
 
 
@@ -135,7 +135,7 @@ class PolicyPickPlace:
     """1 枚ぶんを方策で実行する。退避位置から始め(必要なら先に退避)、放して上がったら退避して完了。
 
     置けていなければ、布が元の位置の近くに残っている限り最大 max_grip_retries 回まで撮り直して再試行する
-    (手続き版と同じ上位の立て直し。方策そのものは変えない)。
+    (ルールベース版と同じ上位の立て直し。方策そのものは変えない)。
     """
 
     max_grip_retries = 2
@@ -209,7 +209,7 @@ class PolicyPickPlace:
             released = self._released_near_place()
             if episode_done(self.closed_once, grip, self.arm.world.tip_pos, self.env.goal_vector()[2:4], self.steps) or released:
                 self.phase = Phase.RELEASE           # 開いた(または布が離れた)。全開にして布が落ち切るまで待ち、判定する
-                self.arm.inner._cmd[:] = a[:3]       # 以後の放す動作(振り落としを含む)は手続き版の release_step に任せる
+                self.arm.inner._cmd[:] = a[:3]       # 以後の放す動作(振り落としを含む)はルールベース版の release_step に任せる
             elif released is False:
                 self._retry_or_fail()                # 途中で落とした
             elif self.steps * dt > MAX_EPISODE_S:
@@ -217,7 +217,7 @@ class PolicyPickPlace:
                 self._retry_or_fail()
             return self.phase
         if self.phase is Phase.RELEASE:
-            # 放す動作そのものは手続き版と共通: 全開にして落ち着くまで待ち、布が指に引っかかっていれば横に振って落とす
+            # 放す動作そのものはルールベース版と共通: 全開にして落ち着くまで待ち、布が指に引っかかっていれば横に振って落とす
             inner = self.arm.inner
             if inner.holding_id is None:
                 inner.holding_id = self.target_id

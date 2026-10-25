@@ -1,4 +1,4 @@
-"""教師(手続き的な把持)の上限を上げるための比較実験。描画なし、布 1〜3 枚の場面で 1 枚運ぶ。
+"""教師(ルールベースの制御)の上限を上げるための比較実験。描画なし、布 1〜3 枚の場面で 1 枚運ぶ。
 
     python tools/teacher_variants.py --variant base --seeds 30000 30001 ... --out runs/teacher/base.jsonl
 

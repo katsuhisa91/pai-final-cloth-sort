@@ -48,7 +48,7 @@ class Overlay:
     detections: list[tuple[tuple[int, int, int, int], str, float]] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
     speed_note: str = ""
-    hand_notes: list[str] | None = None      # 手首カメラの横の説明(None なら手続き的な把持の説明)
+    hand_notes: list[str] | None = None      # 手首カメラの横の説明(None ならルールベースの制御の説明)
 
 
 SCRIPTED_HAND_NOTES = [

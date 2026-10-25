@@ -1,4 +1,4 @@
-"""学習した方策と手続き的な把持を、学習に使っていないシードで比べる。
+"""学習した方策とルールベースの制御を、学習に使っていないシードで比べる。
 
     python -m cloth_sort.learning.evaluate --policy runs/train/act/checkpoints/020000/pretrained_model \\
         --episodes 20 --out runs/eval/act --video

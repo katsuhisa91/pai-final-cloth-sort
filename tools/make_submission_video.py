@@ -239,7 +239,7 @@ class StatusWatcher:
 def compose_run(src: Image.Image, caption: str | None, summary: dict) -> Image.Image:
     img = src.convert("RGB")
     d = ImageDraw.Draw(img)
-    # 録画のフッタは手続き版の文言のままなので、方策版の流れに書き換える
+    # 録画のフッタはルールベース版の文言のままなので、方策版の流れに書き換える
     d.rectangle([0, 1046, 1230, H], fill=BG)
     d.text((30, 1052), "カメラ → 検出 → 番号読み取り(CNN) → 計画 → 学習方策(ACT)が手先目標を出力 → IK → 把持(物理) → 検証",
            fill=DIM, font=font(17))

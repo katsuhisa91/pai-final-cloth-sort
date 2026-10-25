@@ -1,7 +1,7 @@
 """MuJoCo(flex の布)で 1 枚をつまんで運んで放す様子を、寄りのカメラで撮る。
 
 RoboSimStudio の実験(experiments/robosimstudio/cloth_pinch.py)と見比べるための映像。
-アームは本体と同じ手続き的な把持(GripperArm + PickPlace)、速度も本体のまま。
+アームは本体と同じルールベースの制御(GripperArm + PickPlace)、速度も本体のまま。
 
     MUJOCO_GL=osmesa .venv/bin/python tools/mujoco_closeup.py --seed 3 --out runs/closeup/mujoco_pinch.mp4
 """

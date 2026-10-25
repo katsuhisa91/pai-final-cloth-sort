@@ -8,9 +8,9 @@
 
 行動(policy が出すもの)
 - 手先の目標位置 xyz [m] と、指の指令(0 = 閉、1 = 開)。20 Hz
-- 関節角への変換(IK)と位置サーボは手続き的な把持と同じものを使う。実機で言えばモータドライバ相当
+- 関節角への変換(IK)と位置サーボはルールベースの制御と同じものを使う。実機で言えばモータドライバ相当
 
-教師は手続き的な把持(GripperArm + PickPlace)。1 エピソードは退避位置から始まり、放して上空へ戻るまで。
+教師はルールベースの制御(GripperArm + PickPlace)。1 エピソードは退避位置から始まり、放して上空へ戻るまで。
 """
 
 from __future__ import annotations
@@ -147,11 +147,11 @@ class PickPlaceEnv:
 
     # ---------- 行動 ----------
     def last_command(self) -> np.ndarray:
-        """直前の周期にアームへ与えた指令(手続き的な把持を教師にするときに読む)。"""
+        """直前の周期にアームへ与えた指令(ルールベースの制御を教師にするときに読む)。"""
         return np.array([*self.arm._cmd, float(self.world.data.ctrl[NQ]) / OPEN_CTRL], dtype=np.float32)
 
     def apply(self, action: np.ndarray, dt: float = DT) -> None:
-        """方策の行動を 1 周期ぶん実行する。IK + 位置サーボは手続き的な把持と共通。"""
+        """方策の行動を 1 周期ぶん実行する。IK + 位置サーボはルールベースの制御と共通。"""
         self.arm._cmd[:] = action[:3]
         self.arm._vel = 0.0
         self.world.data.ctrl[NQ] = float(np.clip(action[3], 0.0, 1.0)) * OPEN_CTRL
@@ -262,7 +262,7 @@ NOISE_PHASES = {Phase.APPROACH, Phase.CARRY, Phase.RETREAT}     # 精度が要�
 
 def run_expert(env: PickPlaceEnv, record: bool = True, images: bool = True, on_step=None,
                noise_m: float = 0.0, noise_seed: int = 0) -> Trajectory:
-    """手続き的な把持で 1 エピソード回し、(観測, 行動) を記録する。images=False なら描画せず状態と行動だけ残す。
+    """ルールベースの制御で 1 エピソード回し、(観測, 行動) を記録する。images=False なら描画せず状態と行動だけ残す。
 
     noise_m > 0 なら DART 方式: 接近・搬送・退避の間、実際に動かす手先目標に外乱(標準偏差 noise_m [m]、
     低域通過)を足し、記録する行動は教師のきれいな指令のまま。方策が少しずれた状態からの戻り方を学べる。

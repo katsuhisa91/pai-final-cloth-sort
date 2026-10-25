@@ -1,4 +1,4 @@
-"""手続き的な把持を教師にデモを集め、LeRobot のデータセット(v3)にする。
+"""ルールベースの制御を教師にデモを集め、LeRobot のデータセット(v3)にする。
 
 1. 収集(並列。各ワーカーが別プロセスで物理を回し、エピソードごとに npz を書く)
      python -m cloth_sort.learning.collect --episodes 240 --workers 8 --staging data/staging

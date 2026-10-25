@@ -30,7 +30,7 @@ DT = float(os.environ.get("DT", "0.05"))
 FRAME_DIR = Path(os.environ.get("FRAME_DIR", "runs/dora/frames"))
 FRAME_EVERY = int(os.environ.get("FRAME_EVERY", "2"))
 BACKEND = os.environ.get("BACKEND", "2d")          # "2d" / "mujoco" / "cloth"
-ARM = os.environ.get("ARM", "scripted")            # "scripted": 手続き的な把持 / "policy": 学習した方策(ACT、cloth のみ)
+ARM = os.environ.get("ARM", "scripted")            # "scripted": ルールベースの制御 / "policy": 学習した方策(ACT、cloth のみ)
 POLICY_PATH = os.environ.get("POLICY_PATH") or None
 
 
