@@ -211,8 +211,8 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE, bend=None):
     cam = None
     if video_dir is not None:
         mid = np.array([*rss.get_cell(CELL).surface_frame[:2], surface]) + np.array([center[0], center[1] + CARRY / 2, 0.0])
-        cam = rss.CameraSpec(name="view", width=960, height=540, fov_y=40.0,
-                             eye=tuple(mid + np.array([0.45, -0.35, 0.30])), look_at=tuple(mid),
+        cam = rss.CameraSpec(name="view", width=1280, height=720, fov_y=35.0,
+                             eye=tuple(mid + np.array([0.26, -0.22, 0.16])), look_at=tuple(mid + np.array([0, 0, 0.02])),
                              up=(0.0, 0.0, 1.0), near=0.01, far=5.0)
     r = Runner(sim, session, cam, frames_every=2 if cam else 0)
     try:
@@ -256,7 +256,8 @@ def trial(seed, port, video_dir=None, squeeze=SQUEEZE, bend=None):
         dest = top + np.array([0.0, CARRY, 0.0])
         r.glide(dest, quat, CARRY_SPEED)
         q = r.q()
-        carried = bool(q[:, 2].min() > surface + 0.005)  # 運び終えた時点で布が机から浮いている
+        # 運び終えた時点で、布の中心が運んだ距離の 8 割以上動いている(垂れて机を擦っていても、手に付いて来ていればよい)
+        carried = bool(q[:, 1].mean() - rest[:, 1].mean() > 0.8 * CARRY)
         r.glide(np.array([dest[0], dest[1], surface + tip_off + RELEASE_Z]), quat, 0.03)
         r.grip(0.0)
         r.wait(1.0)
