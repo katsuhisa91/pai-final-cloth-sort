@@ -5,7 +5,7 @@
 dora-rs の dataflow としてつなぎ、MuJoCo の物理シミュレーション上で Franka Panda を動かしています。
 布は変形体(MuJoCo の flex)で、2 本指ハンド(ゴムパッド付き)でつまむ把持そのものを物理に任せています。
 
-- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(2 分 57 秒、1920x1080。説明スライド + 学習した方策(ACT)でアームを動かした仕分けの実行(単一プロセス版、2 倍速、画面に明記)+ RoboSimStudio で布をつまんだ場面)
+- 提出動画: `runs/submission/PAI最終課題_katsuhisa91.mp4`(2 分 52 秒、1920x1080。冒頭の映像 → ロボットがやること → AI は 2 か所 → 学習した方策(ACT)でアームを動かした仕分けの実行(単一プロセス版、2 倍速、場面ごとの字幕つき)→ RoboSimStudio との比較 → 結果と学び)
 - 実行部分のみ: `runs/cloth8/cloth_sort.mp4`(単一プロセス版、seed 4、等速)。学習した方策で同じ場面を回した動画は `runs/cloth8_act/cloth_sort.mp4`。dora 版の実行は `./run_dora.sh` で `runs/dora/frames` に出る(同じ seed で搬送中の落下が 4 枚。把持の成否は物理の微小な差で変わる)
 - 報告書: `report/report.pdf`(元は `report/report.html`)
 - 実機は未接続。アームは `RobotArm` インターフェースの MuJoCo 実装(`GripperArm`)で、実機対応はこの 1 クラスを足す形
@@ -31,10 +31,9 @@ export PYTHONPATH=$PWD
 ./run_dora.sh
 ./run_dora.sh graph     # 構成図
 
-# 4. 提出用の動画(スライド + 学習した方策での実行の録画、実行部分は 2 倍速)を作る
-.venv/bin/python tools/make_submission_video.py --run-video runs/cloth8_act2/cloth_sort.mp4 --log runs/cloth8_act2/log.jsonl \
-  --summary runs/cloth8_act2/summary.json --fig runs/cloth8/top_detect.png --run-speed 2 --arm policy \
-  --rss-video experiments/robosimstudio/results/pinch_soft.mp4 --rss-results experiments/robosimstudio/results/results.jsonl
+# 4. 提出用の動画を作る(MuJoCo の寄りの映像を撮ってから、スライドと実行の録画をつなぐ。実行部分は 2 倍速)
+MUJOCO_GL=osmesa .venv/bin/python tools/mujoco_closeup.py --seed 3 --out runs/closeup/mujoco_pinch.mp4
+.venv/bin/python tools/make_submission_video.py
 
 # テスト
 .venv/bin/python -m pytest -q
