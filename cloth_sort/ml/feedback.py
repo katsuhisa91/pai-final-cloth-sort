@@ -4,6 +4,7 @@
 2. 人が tools/review_label.py で正しい番号を付ける(JSON の "label" が埋まる)
 3. ml/train.py --feedback <review_queue ...> で、番号付きの切り出しを 1 文字ずつに分けて学習データに足す
 
+切り出しは実際に読んだ布片(ここではシミュレータ)の筆跡そのものなので、合成フォントでは足りない分を補える。
 """
 
 from __future__ import annotations

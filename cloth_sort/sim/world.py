@@ -40,6 +40,7 @@ class World:
     gripper_closed: bool = False
     held_piece: int | None = None
     time_s: float = 0.0
+    # 布片の筆跡: 学習で見たフォントと見ていないフォントを混ぜる(学習時と違う筆跡の模擬)
     label_fonts: list[tuple[str, int]] = field(
         default_factory=lambda: fonts.available(fonts.TRAIN_FONTS) + fonts.available(fonts.HELDOUT_FONTS))
     _grain: list[tuple[int, int, int, int]] = field(default_factory=list)
@@ -209,6 +210,7 @@ class World:
 
 
 def _cloth_color(rng: random.Random) -> tuple[int, int, int]:
+    """白・生成り・ピンク・グレー・ベージュなど、布らしい色。"""
     palette = [
         (235, 235, 232), (240, 236, 222), (236, 200, 210), (150, 150, 158),
         (190, 160, 140), (215, 215, 225), (225, 210, 190), (170, 180, 170),

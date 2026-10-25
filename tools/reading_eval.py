@@ -1,3 +1,4 @@
+"""番号読み取りをシミュレータの場面の布で評価し、要確認トレイからのフィードバックを模擬する。
 
     # 1. MuJoCo の場面から布の切り出しを集める(描画を使う。ウィンドウサーバに繋げる環境で)
     python tools/reading_eval.py collect --seeds 70000 70040 --out data/reading/pool.npz
